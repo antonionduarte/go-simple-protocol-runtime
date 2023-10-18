@@ -6,6 +6,8 @@ type Protocol interface {
 	ProtocolID() ProtocolID // Returns the protocol ID
 }
 
+type ProtocolID int
+
 type ProtoProtocol struct {
 	protocol    Protocol
 	msgChannel  chan Message
@@ -19,8 +21,6 @@ func NewProtoProtocol(protocol Protocol) *ProtoProtocol {
 		msgHandlers: make(map[MessageID]func(msg Message)),
 	}
 }
-
-type ProtocolID int
 
 func (p *ProtoProtocol) Start() {
 	p.protocol.Start()

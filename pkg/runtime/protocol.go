@@ -1,4 +1,4 @@
-package protocol_runtime
+package runtime
 
 type Protocol interface {
 	Start()                 // Start the protocol, and register all the message handlers
@@ -9,37 +9,39 @@ type Protocol interface {
 type ProtoProtocol struct {
 	protocol    Protocol
 	msgChannel  chan Message
-	msgHandlers map[MessageID]chan Message
+	msgHandlers map[MessageID]func(msg Message)
 }
 
 func NewProtoProtocol(protocol Protocol) *ProtoProtocol {
 	return &ProtoProtocol{
 		protocol:    protocol,
 		msgChannel:  make(chan Message),
-		msgHandlers: make(map[MessageID]chan Message),
+		msgHandlers: make(map[MessageID]func(msg Message)),
 	}
 }
 
 type ProtocolID int
 
 func (p *ProtoProtocol) Start() {
-	p.Start()
+	p.protocol.Start()
 	go p.MessageHandler()
 }
 
 func (p *ProtoProtocol) Init() {
-	p.Init()
+	p.protocol.Init()
 }
 
-func (p *ProtoProtocol) RegisterMessageHandler(message Message) {
-	p.msgHandlers[message.HandlerID()] = make(chan Message)
+func (p *ProtoProtocol) RegisterMessageHandler(message Message, handler func(Message)) chan Message {
+	msgChan := make(chan Message)
+	p.msgHandlers[message.HandlerID()] = handler
+	return msgChan
 }
 
 func (p *ProtoProtocol) MessageHandler() {
 	for {
 		select {
 		case msg := <-p.msgChannel:
-			p.msgHandlers[msg.HandlerID()] <- msg
+			p.msgHandlers[msg.HandlerID()](msg)
 		}
 	}
 }

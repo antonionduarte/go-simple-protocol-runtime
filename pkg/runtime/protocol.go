@@ -9,47 +9,63 @@ type Protocol interface {
 type ProtocolID int
 
 type ProtoProtocol struct {
-	protocol    Protocol
-	msgChannel  chan Message
-	msgHandlers map[MessageID]func(msg Message)
+	protocol Protocol
+
+	timerChannel   chan Timer
+	messageChannel chan Message
+
+	msgHandlers   map[MessageID]func(msg Message)
+	timerHandlers map[TimerID]func(timer Timer)
 }
 
 func NewProtoProtocol(protocol Protocol) *ProtoProtocol {
 	return &ProtoProtocol{
-		protocol:    protocol,
-		msgChannel:  make(chan Message),
-		msgHandlers: make(map[MessageID]func(msg Message)),
+		protocol:       protocol,
+		messageChannel: make(chan Message),
+		timerChannel:   make(chan Timer),
+		msgHandlers:    make(map[MessageID]func(msg Message)),
+		timerHandlers:  make(map[TimerID]func(timer Timer)),
 	}
 }
 
 func (p *ProtoProtocol) Start() {
 	p.protocol.Start()
-	go p.MessageHandler()
+	go p.EventHandler()
 }
 
 func (p *ProtoProtocol) Init() {
 	p.protocol.Init()
 }
 
-func (p *ProtoProtocol) RegisterMessageHandler(message Message, handler func(Message)) chan Message {
-	msgChan := make(chan Message)
-	p.msgHandlers[message.HandlerID()] = handler
-	return msgChan
+func (p *ProtoProtocol) RegisterMessageHandler(message Message, handler func(Message)) {
+	p.msgHandlers[message.MessageID()] = handler
 }
 
-func (p *ProtoProtocol) MessageHandler() {
+func (p *ProtoProtocol) RegisterTimerHandler(timer Timer, handler func(Timer)) {
+	p.timerHandlers[timer.TimerID()] = handler
+}
+
+func (p *ProtoProtocol) EventHandler() {
 	for {
 		select {
-		case msg := <-p.msgChannel:
-			p.msgHandlers[msg.HandlerID()](msg)
+		case msg := <-p.messageChannel:
+			handler := p.msgHandlers[msg.MessageID()]
+			handler(msg)
+		case timer := <-p.timerChannel:
+			handler := p.timerHandlers[timer.TimerID()]
+			handler(timer)
 		}
 	}
 }
 
-func (p *ProtoProtocol) MsgChannel() chan Message {
-	return p.msgChannel
-}
-
 func (p *ProtoProtocol) ProtocolID() ProtocolID {
 	return p.protocol.ProtocolID()
+}
+
+func (p *ProtoProtocol) TimerChannel() chan Timer {
+	return p.timerChannel
+}
+
+func (p *ProtoProtocol) MessageChannel() chan Message {
+	return p.messageChannel
 }

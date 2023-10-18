@@ -33,19 +33,19 @@ func (r *Runtime) Start() {
 }
 
 // RegisterProtocol registers a protocol to the runtime.
+// It must take in a ProtoProtocol, which should encapsulate the protocol that you yourself develop.
 func (r *Runtime) RegisterProtocol(protocol ProtoProtocol) {
 	r.protocols[protocol.ProtocolID()] = protocol
 }
 
-// RegisterMessageHandler registers a message handler to a protocol.
 func (r *Runtime) startProtocols() {
 	for _, protocol := range r.protocols {
-		go protocol.Start()
+		protocol.Start()
 	}
 }
 
 func (r *Runtime) initProtocols() {
 	for _, protocol := range r.protocols {
-		go protocol.Init()
+		protocol.Init()
 	}
 }

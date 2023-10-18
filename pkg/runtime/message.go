@@ -6,7 +6,7 @@ type Message interface {
 	HandlerID() MessageID
 	ProtocolID() ProtocolID
 	Serialize() ([]byte, error)
-	Deserialize() (Message, error)
+	Deserialize([]byte) (Message, error) // TODO: does this even make sense? maybe.
 }
 
 type MessageID int

@@ -1,6 +1,10 @@
 package net
 
-import "bytes"
+import (
+	"bytes"
+	"encoding/binary"
+	"strconv"
+)
 
 type Host struct {
 	Port int
@@ -14,19 +18,41 @@ func NewHost(port int, ip string) *Host {
 	}
 }
 
-func (host *Host) Serialize() bytes.Buffer {
+func SerializeHost(host *Host) bytes.Buffer {
 	var buffer bytes.Buffer
-	buffer.Write([]byte(host.IP))
-	buffer.Write([]byte(string(rune(host.Port))))
+	// Serialize the IP address as a null-terminated string with a fixed length of 15 bytes.
+	buffer.Write([]byte(host.IP + "\x00"))
+	// Serialize the port as a 16-bit unsigned integer in little-endian order.
+	portBytes := make([]byte, 2)
+	binary.LittleEndian.PutUint16(portBytes, uint16(host.Port))
+	buffer.Write(portBytes)
 	return buffer
 }
 
-func (host *Host) Deserialize(buffer bytes.Buffer) *Host {
-	host.IP = string(buffer.Next(4))
-	host.Port = int(buffer.Next(1)[0])
+func DeserializeHost(buffer *bytes.Buffer) *Host {
+	host := &Host{}
+	// Read the IP address as a null-terminated string.
+	ipBytes := make([]byte, 0)
+	for {
+		b, err := buffer.ReadByte()
+		if err != nil || b == 0 {
+			break
+		}
+		ipBytes = append(ipBytes, b)
+	}
+	host.IP = string(ipBytes)
+
+	// Read the port as a 16-bit unsigned integer in little-endian order.
+	portBytes := make([]byte, 2)
+	_, err := buffer.Read(portBytes)
+	if err != nil {
+		return nil
+	}
+	host.Port = int(binary.LittleEndian.Uint16(portBytes))
+
 	return host
 }
 
 func (host *Host) ToString() string {
-	return host.IP + ":" + string(rune(host.Port))
+	return host.IP + ":" + strconv.Itoa(host.Port)
 }

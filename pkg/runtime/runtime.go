@@ -1,8 +1,8 @@
 package runtime
 
 import (
+	"encoding/binary"
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
-	"strconv"
 	"sync"
 )
 
@@ -65,21 +65,21 @@ func (r *Runtime) RegisterNetworkLayer(networkLayer net.NetworkLayer) {
 // receiveMessage receives a message from the Network Layer.
 func receiveMessage(networkMessage *net.NetworkMessage) {
 	buffer := networkMessage.Msg
-	protocolIDByte := buffer.Next(1)
-	messageIDByte := buffer.Next(1)
 
-	protocolID, err := strconv.Atoi(string(protocolIDByte))
+	// Read ProtocolID and MessageID as 2-byte integers in little-endian order.
+	var protocolID uint16
+	err := binary.Read(buffer, binary.LittleEndian, &protocolID)
 	if err != nil {
-		// TODO: Replace with decent logger event.
+		return
+	}
+	var messageID uint16
+	err = binary.Read(buffer, binary.LittleEndian, &messageID)
+	if err != nil {
+		return
 	}
 
-	messageID, err := strconv.Atoi(string(messageIDByte))
-	if err != nil {
-		// TODO: Replace with decent logger event.
-	}
-
-	protocol := GetRuntimeInstance().protocols[protocolID]
-	message, _ := protocol.msgSerializers[messageID].Deserialize(buffer)
+	protocol := GetRuntimeInstance().protocols[int(protocolID)]
+	message, _ := protocol.msgSerializers[int(messageID)].Deserialize(buffer)
 
 	protocol.messageChannel <- message
 }

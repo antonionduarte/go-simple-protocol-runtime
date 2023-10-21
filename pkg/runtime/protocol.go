@@ -2,8 +2,8 @@ package runtime
 
 import (
 	"bytes"
+	"encoding/binary"
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
-	"strconv"
 )
 
 type (
@@ -90,14 +90,18 @@ func SendMessage(msg Message, host *net.Host) {
 		// TODO: Replace with decent logger event.
 	}
 
-	// Add to the Buffer: [ProtocolID][MessageID][Message]
-	protocolIDBytes := []byte(strconv.Itoa(msg.ProtocolID()))
-	messageIDBytes := []byte(strconv.Itoa(msg.MessageID()))
-
-	// Create a buffer and write the bytes.
+	// Create a buffer and write ProtocolID, MessageID, and the message.
 	buffer := new(bytes.Buffer)
-	buffer.Write(protocolIDBytes)
-	buffer.Write(messageIDBytes)
+	protocolID := uint16(msg.ProtocolID())
+	err = binary.Write(buffer, binary.LittleEndian, protocolID)
+	if err != nil {
+		return
+	}
+	messageID := uint16(msg.MessageID())
+	err = binary.Write(buffer, binary.LittleEndian, messageID)
+	if err != nil {
+		return
+	}
 	buffer.Write(msgBuffer.Bytes())
 
 	networkMessage := net.NewNetworkMessage(buffer, host)

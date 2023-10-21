@@ -27,3 +27,10 @@ func handleInConnectionUp() {}
 
 func handleOutConnectionFailed() {}
 ```
+
+## Errors we could detect and log:
+
+- [ ] Net layer related errors.
+- [ ] Protocol not registered.
+- [ ] Message serializer not registered.
+- [ ] Trying to start runtime without network protocol.

@@ -4,17 +4,17 @@ Simple protocol runtime in Go.
 ## TODO:
 
 - [x] Implement basic structure.
-- [ ] Implement network layer, for both TCP and UDP.
+- [X] Implement network layer, for TCP initially, if anyone wants UDP or QUIC they can add it themselves.
 - [ ] Implement inter-protocol communication, so that we can send messages between protocols within same Runtime.
 - [ ] Implement a simple protocol, which can send and receive messages to test this.
 - [ ] Implement timer functionality.
 - [ ] Implement configuration file parser.
+- [ ] Add contexts **everywhere** in order to gracefully finish the runtime and it's experiments.
 
 ## Net layer:
 
-- [ ] Host struct with serializer and deserializer.
+- [X] Host struct with serializer and deserializer.
 - [ ] Add the Sender Host to all the messages.
-- [ ] Create a GoRoutine per OutChannel connection in order to send messages.
 
 Types of Network / Channel Events:
 

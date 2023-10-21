@@ -6,7 +6,7 @@ type (
 	NetworkLayer interface {
 		Connect(host *Host)
 		Disconnect(host *Host)
-		Send(msg bytes.Buffer, host *Host)
+		Send(msg *bytes.Buffer, host *Host)
 	}
 
 	NetworkMessage struct {

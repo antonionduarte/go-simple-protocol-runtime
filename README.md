@@ -1,7 +1,7 @@
 # go-simple-protocol-runtime
 Simple protocol runtime in Go.
 
-# TODO:
+## TODO:
 
 - [x] Implement basic structure.
 - [ ] Implement network layer, for both TCP and UDP.
@@ -9,3 +9,21 @@ Simple protocol runtime in Go.
 - [ ] Implement a simple protocol, which can send and receive messages to test this.
 - [ ] Implement timer functionality.
 - [ ] Implement configuration file parser.
+
+## Net layer:
+
+- [ ] Host struct with serializer and deserializer.
+
+Types of Network / Channel Events:
+
+```go
+package main 
+
+func handleOutConnectionDown() {}
+func handleOutConnectionUp() {}
+
+func handleInConnectionDown() {}
+func handleInConnectionUp() {}
+
+func handleOutConnectionFailed() {}
+```

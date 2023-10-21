@@ -102,5 +102,5 @@ func SendMessage(msg Message, host *net.Host) {
 
 	networkMessage := net.NewNetworkMessage(buffer, host)
 
-	GetRuntimeInstance().networkLayer.Send(networkMessage, host)
+	GetRuntimeInstance().networkLayer.Send(networkMessage)
 }

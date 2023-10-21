@@ -13,6 +13,8 @@ Simple protocol runtime in Go.
 ## Net layer:
 
 - [ ] Host struct with serializer and deserializer.
+- [ ] Add the Sender Host to all the messages.
+- [ ] Create a GoRoutine per OutChannel connection in order to send messages.
 
 Types of Network / Channel Events:
 

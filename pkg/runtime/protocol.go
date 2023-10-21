@@ -18,12 +18,11 @@ type (
 
 		timerChannel   chan Timer
 		messageChannel chan Message
-		bufferChannel  chan bytes.Buffer
 
 		msgSerializers map[int]Serializer
 
 		msgHandlers   map[int]func(msg Message) // TODO: this is never going to receive a Message, it's going to still receive a Buffer
-		timerHandlers map[TimerID]func(timer Timer)
+		timerHandlers map[int]func(timer Timer)
 	}
 )
 
@@ -33,12 +32,11 @@ func NewProtoProtocol(protocol Protocol) *ProtoProtocol {
 
 		msgSerializers: make(map[int]Serializer),
 
-		messageChannel: make(chan Message),
-		timerChannel:   make(chan Timer),
-		bufferChannel:  make(chan bytes.Buffer),
+		messageChannel: make(chan Message, 1),
+		timerChannel:   make(chan Timer, 1),
 
 		msgHandlers:   make(map[int]func(msg Message)),
-		timerHandlers: make(map[TimerID]func(timer Timer)),
+		timerHandlers: make(map[int]func(timer Timer)),
 	}
 }
 
@@ -62,7 +60,6 @@ func (p *ProtoProtocol) RegisterTimerHandler(timer Timer, handler func(Timer)) {
 func (p *ProtoProtocol) EventHandler() {
 	for {
 		select {
-		// case buffer := <-p.bufferChannel:
 		case msg := <-p.messageChannel:
 			handler := p.msgHandlers[msg.MessageID()]
 			handler(msg)
@@ -103,26 +100,7 @@ func SendMessage(msg Message, host *net.Host) {
 	buffer.Write(messageIDBytes)
 	buffer.Write(msgBuffer.Bytes())
 
-	GetRuntimeInstance().networkLayer.Send(buffer, host)
-}
+	networkMessage := net.NewNetworkMessage(buffer, host)
 
-// ReceiveMessage receives a message from the Network Layer.
-func ReceiveMessage(buffer bytes.Buffer) {
-	protocolIDByte := buffer.Next(1)
-	messageIDByte := buffer.Next(1)
-
-	protocolID, err := strconv.Atoi(string(protocolIDByte))
-	if err != nil {
-		// TODO: Replace with decent logger event.
-	}
-
-	messageID, err := strconv.Atoi(string(messageIDByte))
-	if err != nil {
-		// TODO: Replace with decent logger event.
-	}
-
-	protocol := GetRuntimeInstance().protocols[protocolID]
-	message, _ := protocol.msgSerializers[messageID].Deserialize(buffer)
-
-	protocol.messageChannel <- message
+	GetRuntimeInstance().networkLayer.Send(networkMessage, host)
 }

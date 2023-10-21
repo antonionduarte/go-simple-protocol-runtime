@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
+	"strconv"
 	"sync"
 )
 
@@ -16,13 +17,12 @@ var instance *Runtime
 var once sync.Once
 
 // GetRuntimeInstance creates a new instance.
-// TODO: This should probably be a Singleton instead.
 func GetRuntimeInstance() *Runtime {
 	once.Do(func() {
 		instance = &Runtime{
-			msgChannel:   make(chan Message),
-			timerChannel: make(chan Timer),
-			protocols:    make(map[int]ProtoProtocol),
+			msgChannel:   make(chan Message, 1),
+			timerChannel: make(chan Timer, 1),
+			protocols:    make(map[int]ProtoProtocol, 1),
 		}
 	})
 	return instance
@@ -30,6 +30,11 @@ func GetRuntimeInstance() *Runtime {
 
 // Start starts the instance, and runs the start and init function for all the protocols.
 func (r *Runtime) Start() {
+	if r.networkLayer == nil {
+		// TODO: Replace with decent logger event.
+		panic("Network layer not registered")
+	}
+
 	r.startProtocols()
 	r.initProtocols()
 
@@ -41,6 +46,8 @@ func (r *Runtime) Start() {
 		case timer := <-r.timerChannel:
 			protocol := r.protocols[timer.ProtocolID()]
 			protocol.TimerChannel() <- timer
+		case networkMessage := <-r.networkLayer.OutChannel():
+			receiveMessage(networkMessage)
 		}
 	}
 }
@@ -49,6 +56,32 @@ func (r *Runtime) Start() {
 // It must take in a ProtoProtocol, which should encapsulate the protocol that you yourself develop.
 func (r *Runtime) RegisterProtocol(protocol ProtoProtocol) {
 	r.protocols[protocol.ProtocolID()] = protocol
+}
+
+func (r *Runtime) RegisterNetworkLayer(networkLayer net.NetworkLayer) {
+	r.networkLayer = networkLayer
+}
+
+// receiveMessage receives a message from the Network Layer.
+func receiveMessage(networkMessage *net.NetworkMessage) {
+	buffer := networkMessage.Msg
+	protocolIDByte := buffer.Next(1)
+	messageIDByte := buffer.Next(1)
+
+	protocolID, err := strconv.Atoi(string(protocolIDByte))
+	if err != nil {
+		// TODO: Replace with decent logger event.
+	}
+
+	messageID, err := strconv.Atoi(string(messageIDByte))
+	if err != nil {
+		// TODO: Replace with decent logger event.
+	}
+
+	protocol := GetRuntimeInstance().protocols[protocolID]
+	message, _ := protocol.msgSerializers[messageID].Deserialize(buffer)
+
+	protocol.messageChannel <- message
 }
 
 func (r *Runtime) startProtocols() {

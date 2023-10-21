@@ -13,11 +13,11 @@ type (
 	}
 )
 
-func NewTCPLayer(self Host) *TCPLayer {
+func NewTCPLayer(self *Host) *TCPLayer {
 	tcpLayer := &TCPLayer{
-		outChannel:        make(chan *NetworkMessage), // These will be sent to the TCP layer, so it sends.
-		outChannelEvents:  make(chan *ConnEvents),     // These will be sent to the upper layer (probably the protocol)
-		activeConnections: make(map[*Host]net.Conn),   // These are the active connections.
+		outChannel:        make(chan *NetworkMessage, 10), // These will be sent to the TCP layer, so it sends.
+		outChannelEvents:  make(chan *ConnEvents, 1),      // These will be sent to the upper layer (probably the protocol)
+		activeConnections: make(map[*Host]net.Conn),       // These are the active connections.
 	}
 
 	tcpLayer.start(self)
@@ -56,7 +56,15 @@ func (t *TCPLayer) Disconnect(host *Host) {
 	delete(t.activeConnections, host)
 }
 
-func (t *TCPLayer) start(self Host) {
+func (t *TCPLayer) OutChannel() chan *NetworkMessage {
+	return t.outChannel
+}
+
+func (t *TCPLayer) OutChannelEvents() chan *ConnEvents {
+	return t.outChannelEvents
+}
+
+func (t *TCPLayer) start(self *Host) {
 	listener, err := net.Listen("tcp", self.ToString())
 
 	if err != nil {
@@ -89,7 +97,7 @@ func (t *TCPLayer) handleConnection(conn net.Conn, host *Host) {
 		}
 		var byteBuffer bytes.Buffer
 		byteBuffer.Write(buf)
-		t.outChannel <- &NetworkMessage{host, byteBuffer}
+		t.outChannel <- &NetworkMessage{host, &byteBuffer}
 	}
 }
 

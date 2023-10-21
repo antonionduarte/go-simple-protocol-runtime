@@ -53,6 +53,20 @@ func DeserializeHost(buffer *bytes.Buffer) *Host {
 	return host
 }
 
+func CompareHost(host1, host2 *Host) bool {
+	// Compare IP addresses
+	if host1.IP != host2.IP {
+		return false
+	}
+
+	// Compare port numbers
+	if host1.Port != host2.Port {
+		return false
+	}
+
+	return true
+}
+
 func (host *Host) ToString() string {
 	return host.IP + ":" + strconv.Itoa(host.Port)
 }

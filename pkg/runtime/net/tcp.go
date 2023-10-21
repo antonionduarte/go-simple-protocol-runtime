@@ -7,22 +7,53 @@ import (
 
 type (
 	TCPLayer struct {
-		ReceiveChannel    chan NetworkMessage
-		ChannelEvents     chan ConnEvents
-		ActiveConnections map[*Host]net.Conn
+		outChannel        chan *NetworkMessage
+		outChannelEvents  chan *ConnEvents
+		activeConnections map[*Host]net.Conn
 	}
 )
 
 func NewTCPLayer(self Host) *TCPLayer {
 	tcpLayer := &TCPLayer{
-		ReceiveChannel:    make(chan NetworkMessage), // These will be sent to the TCP layer, so it sends.
-		ChannelEvents:     make(chan ConnEvents),     // These will be sent to the upper layer (probably the protocol)
-		ActiveConnections: make(map[*Host]net.Conn),  // These are the active connections.
+		outChannel:        make(chan *NetworkMessage), // These will be sent to the TCP layer, so it sends.
+		outChannelEvents:  make(chan *ConnEvents),     // These will be sent to the upper layer (probably the protocol)
+		activeConnections: make(map[*Host]net.Conn),   // These are the active connections.
 	}
 
 	tcpLayer.start(self)
 
 	return tcpLayer
+}
+
+func (t *TCPLayer) Send(msg bytes.Buffer, host *Host) {
+	conn := t.activeConnections[host]
+
+	_, err := conn.Write(msg.Bytes()) // TODO: Replace with actual message.
+
+	if err != nil {
+		print(err)
+		// TODO: Replace with decent logger event.
+		// TODO: Probably means conn died, should disconnect host(?) and send event to upper layer(?)
+	}
+}
+
+func (t *TCPLayer) Connect(host *Host) {
+	conn, err := net.Dial("tcp", host.ToString())
+	if err != nil {
+		print(err)
+		// TODO: Replace with decent logger event.
+	}
+	t.activeConnections[host] = conn
+}
+
+func (t *TCPLayer) Disconnect(host *Host) {
+	conn := t.activeConnections[host]
+	err := conn.Close()
+	if err != nil {
+		// TODO: Replace with decent logger event.
+		print(err)
+	}
+	delete(t.activeConnections, host)
 }
 
 func (t *TCPLayer) start(self Host) {
@@ -43,7 +74,7 @@ func (t *TCPLayer) start(self Host) {
 		}
 
 		host := NewHost(0, conn.RemoteAddr().String())
-		t.ActiveConnections[host] = conn
+		t.activeConnections[host] = conn
 		go t.handleConnection(conn, host)
 	}
 }
@@ -58,48 +89,17 @@ func (t *TCPLayer) handleConnection(conn net.Conn, host *Host) {
 		}
 		var byteBuffer bytes.Buffer
 		byteBuffer.Write(buf)
-		t.ReceiveChannel <- NetworkMessage{host, byteBuffer}
+		t.outChannel <- &NetworkMessage{host, byteBuffer}
 	}
 }
 
 func (t *TCPLayer) eventHandler() {
 	for {
 		select {
-		case msg := <-t.ReceiveChannel:
+		case msg := <-t.outChannel:
 			print(msg)
-		case event := <-t.ChannelEvents:
+		case event := <-t.outChannelEvents:
 			print(event)
 		}
 	}
-}
-
-func (t *TCPLayer) Send(msg bytes.Buffer, host *Host) {
-	conn := t.ActiveConnections[host]
-
-	_, err := conn.Write(msg.Bytes()) // TODO: Replace with actual message.
-
-	if err != nil {
-		print(err)
-		// TODO: Replace with decent logger event.
-		// TODO: Probably means conn died, should disconnect host(?) and send event to upper layer(?)
-	}
-}
-
-func (t *TCPLayer) Connect(host *Host) {
-	conn, err := net.Dial("tcp", host.ToString())
-	if err != nil {
-		print(err)
-		// TODO: Replace with decent logger event.
-	}
-	t.ActiveConnections[host] = conn
-}
-
-func (t *TCPLayer) Disconnect(host *Host) {
-	conn := t.ActiveConnections[host]
-	err := conn.Close()
-	if err != nil {
-		// TODO: Replace with decent logger event.
-		print(err)
-	}
-	delete(t.ActiveConnections, host)
 }

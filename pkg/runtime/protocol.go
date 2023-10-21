@@ -85,13 +85,18 @@ func (p *ProtoProtocol) MessageChannel() chan Message {
 // SendMessage sends a message to a host via the Network Layer.
 func SendMessage(msg Message, host *net.Host) {
 	msgBuffer, err := msg.Serializer().Serialize()
-
 	if err != nil {
 		// TODO: Replace with decent logger event.
 	}
 
-	// Create a buffer and write ProtocolID, MessageID, and the message.
+	// Create a buffer and write Sender's Host, ProtocolID, MessageID, and the message.
 	buffer := new(bytes.Buffer)
+
+	// Serialize the sender's Host
+	senderHostBuffer, _ := net.SerializeHost(host)
+	buffer.Write(senderHostBuffer.Bytes())
+
+	// Serialize ProtocolID and MessageID
 	protocolID := uint16(msg.ProtocolID())
 	err = binary.Write(buffer, binary.LittleEndian, protocolID)
 	if err != nil {
@@ -105,6 +110,5 @@ func SendMessage(msg Message, host *net.Host) {
 	buffer.Write(msgBuffer.Bytes())
 
 	networkMessage := net.NewNetworkMessage(buffer, host)
-
 	GetRuntimeInstance().networkLayer.Send(networkMessage)
 }

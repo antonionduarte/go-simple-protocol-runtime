@@ -8,7 +8,7 @@ type (
 		Disconnect(host *Host)
 		Send(msg *NetworkMessage)
 		OutChannel() chan *NetworkMessage
-		OutChannelEvents() chan *ConnEvents
+		OutChannelEvents() chan ConnEvents
 	}
 
 	NetworkMessage struct {

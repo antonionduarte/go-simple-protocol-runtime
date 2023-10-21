@@ -66,20 +66,28 @@ func (r *Runtime) RegisterNetworkLayer(networkLayer net.NetworkLayer) {
 func receiveMessage(networkMessage *net.NetworkMessage) {
 	buffer := networkMessage.Msg
 
-	// Read ProtocolID and MessageID as 2-byte integers in little-endian order.
-	var protocolID uint16
-	err := binary.Read(buffer, binary.LittleEndian, &protocolID)
-	if err != nil {
+	var protocolID, messageID uint16
+	if err := binary.Read(buffer, binary.LittleEndian, &protocolID); err != nil {
+		// TODO: Handle the error
 		return
 	}
-	var messageID uint16
-	err = binary.Read(buffer, binary.LittleEndian, &messageID)
-	if err != nil {
+	if err := binary.Read(buffer, binary.LittleEndian, &messageID); err != nil {
+		// TODO: Handle the error
 		return
 	}
 
-	protocol := GetRuntimeInstance().protocols[int(protocolID)]
-	message, _ := protocol.msgSerializers[int(messageID)].Deserialize(buffer)
+	runtimeInstance := GetRuntimeInstance()
+	protocol, exists := runtimeInstance.protocols[int(protocolID)]
+	if !exists {
+		// TODO: Handle the error (unknown protocol)
+		return
+	}
+
+	message, err := protocol.msgSerializers[int(messageID)].Deserialize(buffer)
+	if err != nil {
+		// TODO: Handle the error
+		return
+	}
 
 	protocol.messageChannel <- message
 }

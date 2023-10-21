@@ -3,111 +3,125 @@ package net
 import (
 	"bytes"
 	"net"
+	"sync"
 )
 
 type (
 	TCPLayer struct {
 		outChannel        chan *NetworkMessage
-		outChannelEvents  chan *ConnEvents
+		outChannelEvents  chan ConnEvents
 		activeConnections map[*Host]net.Conn
+		mutex             sync.Mutex // Mutex to protect concurrent access to activeConnections
 	}
 )
 
 func NewTCPLayer(self *Host) *TCPLayer {
 	tcpLayer := &TCPLayer{
-		outChannel:        make(chan *NetworkMessage, 10), // These will be sent to the TCP layer, so it sends.
-		outChannelEvents:  make(chan *ConnEvents, 1),      // These will be sent to the upper layer (probably the protocol)
-		activeConnections: make(map[*Host]net.Conn),       // These are the active connections.
+		outChannel:        make(chan *NetworkMessage, 10),
+		outChannelEvents:  make(chan ConnEvents, 1),
+		activeConnections: make(map[*Host]net.Conn),
 	}
 
-	tcpLayer.start(self)
+	go tcpLayer.start(self) // Starting the listener in a goroutine
 
 	return tcpLayer
 }
 
 func (t *TCPLayer) Send(networkMessage *NetworkMessage) {
-	conn := t.activeConnections[networkMessage.Host]
-	msgBytes := networkMessage.Msg.Bytes()
-	_, err := conn.Write(msgBytes) // TODO: Replace with actual message.
+	t.mutex.Lock()
+	conn, ok := t.activeConnections[networkMessage.Host]
+	t.mutex.Unlock()
 
+	if !ok {
+		t.outChannelEvents <- ConnFailed
+		return
+	}
+
+	_, err := conn.Write(networkMessage.Msg.Bytes())
 	if err != nil {
-		print(err)
-		// TODO: Replace with decent logger event.
-		// TODO: Probably means conn died, should disconnect host(?) and send event to upper layer(?)
+		t.outChannelEvents <- ConnFailed
+		t.Disconnect(networkMessage.Host) // Disconnect if there's an error
 	}
 }
 
 func (t *TCPLayer) Connect(host *Host) {
 	conn, err := net.Dial("tcp", host.ToString())
 	if err != nil {
-		print(err)
-		// TODO: Replace with decent logger event.
+		t.outChannelEvents <- ConnFailed
+		return
 	}
+
+	t.mutex.Lock()
 	t.activeConnections[host] = conn
+	t.mutex.Unlock()
+
+	t.outChannelEvents <- ConnConnected
 }
 
 func (t *TCPLayer) Disconnect(host *Host) {
-	conn := t.activeConnections[host]
-	err := conn.Close()
-	if err != nil {
-		// TODO: Replace with decent logger event.
-		print(err)
+	t.mutex.Lock()
+	conn, ok := t.activeConnections[host]
+	if ok {
+		delete(t.activeConnections, host)
 	}
-	delete(t.activeConnections, host)
+	t.mutex.Unlock()
+
+	if ok {
+		err := conn.Close()
+		if err != nil {
+			// Additional logging can be done here if necessary
+		}
+		t.outChannelEvents <- ConnDisconnected
+	}
 }
 
 func (t *TCPLayer) OutChannel() chan *NetworkMessage {
 	return t.outChannel
 }
 
-func (t *TCPLayer) OutChannelEvents() chan *ConnEvents {
+func (t *TCPLayer) OutChannelEvents() chan ConnEvents {
 	return t.outChannelEvents
 }
 
 func (t *TCPLayer) start(self *Host) {
 	listener, err := net.Listen("tcp", self.ToString())
-
 	if err != nil {
-		// TODO: Replace with decent logger event.
-		print(err)
+		// Handle error
+		return
 	}
-
-	go t.eventHandler()
 
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			// TODO: Replace with decent logger event.
-			print(err)
+			// Handle error
+			continue
 		}
 
-		host := NewHost(0, conn.RemoteAddr().String())
+		// Parsing the actual port when creating a new Host
+		addr := conn.RemoteAddr().(*net.TCPAddr)
+		host := NewHost(addr.Port, addr.IP.String())
+
+		t.mutex.Lock()
 		t.activeConnections[host] = conn
+		t.mutex.Unlock()
+
+		t.outChannelEvents <- ConnConnected // Connection established
+
 		go t.handleConnection(conn, host)
 	}
 }
 
 func (t *TCPLayer) handleConnection(conn net.Conn, host *Host) {
+	buf := make([]byte, 1024)
 	for {
-		buf := make([]byte, 1024)
 		_, err := conn.Read(buf)
 		if err != nil {
-			// TODO: Replace with decent logger event.
-			print(err)
+			t.Disconnect(host) // Disconnect on error and handle event
+			return
 		}
+
 		var byteBuffer bytes.Buffer
 		byteBuffer.Write(buf)
 		t.outChannel <- &NetworkMessage{host, &byteBuffer}
-	}
-}
-
-func (t *TCPLayer) eventHandler() {
-	for {
-		select {
-		case msg := <-t.outChannel:
-			print(msg)
-		case event := <-t.outChannelEvents:
-			print(event)
-		}
 	}
 }

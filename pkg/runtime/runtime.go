@@ -8,30 +8,27 @@ import (
 type Runtime struct {
 	msgChannel   chan Message
 	timerChannel chan Timer
-	protocols    map[ProtocolID]ProtoProtocol
+	protocols    map[int]ProtoProtocol
 	networkLayer net.NetworkLayer
 }
 
-var runtime *Runtime
+var instance *Runtime
 var once sync.Once
 
-// GetRuntimeInstance creates a new runtime.
+// GetRuntimeInstance creates a new instance.
 // TODO: This should probably be a Singleton instead.
-func GetRuntimeInstance(networkLayer net.NetworkLayer) *Runtime {
+func GetRuntimeInstance() *Runtime {
 	once.Do(func() {
-		runtime = &Runtime{
+		instance = &Runtime{
 			msgChannel:   make(chan Message),
 			timerChannel: make(chan Timer),
-			protocols:    make(map[ProtocolID]ProtoProtocol),
+			protocols:    make(map[int]ProtoProtocol),
 		}
 	})
-	return runtime
+	return instance
 }
 
-// SendMessage sends a message to a host via the Network Layer.
-func SendMessage(msg Message, host *net.Host) {}
-
-// Start starts the runtime, and runs the start and init function for all the protocols.
+// Start starts the instance, and runs the start and init function for all the protocols.
 func (r *Runtime) Start() {
 	r.startProtocols()
 	r.initProtocols()
@@ -48,7 +45,7 @@ func (r *Runtime) Start() {
 	}
 }
 
-// RegisterProtocol registers a protocol to the runtime.
+// RegisterProtocol registers a protocol to the instance.
 // It must take in a ProtoProtocol, which should encapsulate the protocol that you yourself develop.
 func (r *Runtime) RegisterProtocol(protocol ProtoProtocol) {
 	r.protocols[protocol.ProtocolID()] = protocol

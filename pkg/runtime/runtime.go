@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
+	"sync"
 )
 
 type Runtime struct {
@@ -11,15 +12,24 @@ type Runtime struct {
 	networkLayer net.NetworkLayer
 }
 
-// NewRuntime creates a new runtime.
+var runtime *Runtime
+var once sync.Once
+
+// GetRuntimeInstance creates a new runtime.
 // TODO: This should probably be a Singleton instead.
-func NewRuntime(networkLayer net.NetworkLayer) *Runtime {
-	return &Runtime{
-		msgChannel:   make(chan Message),
-		timerChannel: make(chan Timer),
-		protocols:    make(map[ProtocolID]ProtoProtocol),
-	}
+func GetRuntimeInstance(networkLayer net.NetworkLayer) *Runtime {
+	once.Do(func() {
+		runtime = &Runtime{
+			msgChannel:   make(chan Message),
+			timerChannel: make(chan Timer),
+			protocols:    make(map[ProtocolID]ProtoProtocol),
+		}
+	})
+	return runtime
 }
+
+// SendMessage sends a message to a host via the Network Layer.
+func SendMessage(msg Message, host *net.Host) {}
 
 // Start starts the runtime, and runs the start and init function for all the protocols.
 func (r *Runtime) Start() {

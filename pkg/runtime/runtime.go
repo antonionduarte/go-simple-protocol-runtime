@@ -1,13 +1,19 @@
 package runtime
 
+import (
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
+)
+
 type Runtime struct {
 	msgChannel   chan Message
 	timerChannel chan Timer
 	protocols    map[ProtocolID]ProtoProtocol
+	networkLayer net.NetworkLayer
 }
 
 // NewRuntime creates a new runtime.
-func NewRuntime() *Runtime {
+// TODO: This should probably be a Singleton instead.
+func NewRuntime(networkLayer net.NetworkLayer) *Runtime {
 	return &Runtime{
 		msgChannel:   make(chan Message),
 		timerChannel: make(chan Timer),

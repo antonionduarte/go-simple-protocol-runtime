@@ -1,22 +1,28 @@
 package runtime
 
-type Protocol interface {
-	Start()                 // Start the protocol, and register all the message handlers
-	Init()                  // Init the protocol, runs after all protocols are registered, send initial messages here
-	ProtocolID() ProtocolID // Returns the protocol ID
-}
+import "bytes"
 
-type ProtocolID int
+type (
+	Protocol interface {
+		Start()                 // Start the protocol, and register all the message handlers
+		Init()                  // Init the protocol, runs after all protocols are registered, send initial messages here
+		ProtocolID() ProtocolID // Returns the protocol ID
+	}
 
-type ProtoProtocol struct {
-	protocol Protocol
+	ProtoProtocol struct {
+		protocol Protocol
 
-	timerChannel   chan Timer
-	messageChannel chan Message
+		timerChannel   chan Timer
+		messageChannel chan Message
+		bufferChannel  chan bytes.Buffer
 
-	msgHandlers   map[MessageID]func(msg Message)
-	timerHandlers map[TimerID]func(timer Timer)
-}
+		msgSerializers map[MessageID]func(buffer bytes.Buffer) (msg Message)
+		msgHandlers    map[MessageID]func(msg Message) // TODO: this is never going to receive a Message, it's going to still receive a Buffer
+		timerHandlers  map[TimerID]func(timer Timer)
+	}
+
+	ProtocolID int
+)
 
 func NewProtoProtocol(protocol Protocol) *ProtoProtocol {
 	return &ProtoProtocol{
@@ -48,6 +54,7 @@ func (p *ProtoProtocol) RegisterTimerHandler(timer Timer, handler func(Timer)) {
 func (p *ProtoProtocol) EventHandler() {
 	for {
 		select {
+		// case buffer := <-p.bufferChannel:
 		case msg := <-p.messageChannel:
 			handler := p.msgHandlers[msg.MessageID()]
 			handler(msg)

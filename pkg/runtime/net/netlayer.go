@@ -6,7 +6,7 @@ type (
 	NetworkLayer interface {
 		Connect(host *Host)
 		Disconnect(host *Host)
-		Send(msg *NetworkMessage, host *Host)
+		Send(msg *NetworkMessage)
 		OutChannel() chan *NetworkMessage
 		OutChannelEvents() chan *ConnEvents
 	}

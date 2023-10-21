@@ -25,10 +25,10 @@ func NewTCPLayer(self *Host) *TCPLayer {
 	return tcpLayer
 }
 
-func (t *TCPLayer) Send(msg bytes.Buffer, host *Host) {
-	conn := t.activeConnections[host]
-
-	_, err := conn.Write(msg.Bytes()) // TODO: Replace with actual message.
+func (t *TCPLayer) Send(networkMessage *NetworkMessage) {
+	conn := t.activeConnections[networkMessage.Host]
+	msgBytes := networkMessage.Msg.Bytes()
+	_, err := conn.Write(msgBytes) // TODO: Replace with actual message.
 
 	if err != nil {
 		print(err)

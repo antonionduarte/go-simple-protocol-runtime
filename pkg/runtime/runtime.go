@@ -37,7 +37,20 @@ func (r *Runtime) Start() {
 
 	r.startProtocols()
 	r.initProtocols()
+	r.eventHandler()
+}
 
+// RegisterProtocol registers a protocol to the instance.
+// It must take in a ProtoProtocol, which should encapsulate the protocol that you yourself develop.
+func (r *Runtime) RegisterProtocol(protocol ProtoProtocol) {
+	r.protocols[protocol.ProtocolID()] = protocol
+}
+
+func (r *Runtime) RegisterNetworkLayer(networkLayer net.NetworkLayer) {
+	r.networkLayer = networkLayer
+}
+
+func (r *Runtime) eventHandler() {
 	for {
 		select {
 		case msg := <-r.msgChannel:
@@ -50,16 +63,6 @@ func (r *Runtime) Start() {
 			receiveMessage(networkMessage)
 		}
 	}
-}
-
-// RegisterProtocol registers a protocol to the instance.
-// It must take in a ProtoProtocol, which should encapsulate the protocol that you yourself develop.
-func (r *Runtime) RegisterProtocol(protocol ProtoProtocol) {
-	r.protocols[protocol.ProtocolID()] = protocol
-}
-
-func (r *Runtime) RegisterNetworkLayer(networkLayer net.NetworkLayer) {
-	r.networkLayer = networkLayer
 }
 
 // receiveMessage receives a message from the Network Layer.

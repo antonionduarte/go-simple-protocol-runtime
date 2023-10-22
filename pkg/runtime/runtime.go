@@ -9,7 +9,7 @@ import (
 type Runtime struct {
 	msgChannel   chan Message
 	timerChannel chan Timer
-	protocols    map[int]ProtoProtocol
+	protocols    map[int]*ProtoProtocol
 	networkLayer net.NetworkLayer
 }
 
@@ -22,7 +22,7 @@ func GetRuntimeInstance() *Runtime {
 		instance = &Runtime{
 			msgChannel:   make(chan Message, 1),
 			timerChannel: make(chan Timer, 1),
-			protocols:    make(map[int]ProtoProtocol, 1),
+			protocols:    make(map[int]*ProtoProtocol, 1),
 		}
 	})
 	return instance
@@ -35,14 +35,19 @@ func (r *Runtime) Start() {
 		panic("Network layer not registered")
 	}
 
+	r.eventHandler()
 	r.startProtocols()
 	r.initProtocols()
-	r.eventHandler()
+}
+
+// GetProtocol returns a protocol from the instance.
+func (r *Runtime) GetProtocol(protocolID int) *ProtoProtocol {
+	return r.protocols[protocolID]
 }
 
 // RegisterProtocol registers a protocol to the instance.
 // It must take in a ProtoProtocol, which should encapsulate the protocol that you yourself develop.
-func (r *Runtime) RegisterProtocol(protocol ProtoProtocol) {
+func (r *Runtime) RegisterProtocol(protocol *ProtoProtocol) {
 	r.protocols[protocol.ProtocolID()] = protocol
 }
 

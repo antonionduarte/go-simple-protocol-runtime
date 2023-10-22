@@ -11,24 +11,27 @@ type (
 		Start()          // Start the protocol, and register all the message handlers
 		Init()           // Init the protocol, runs after all protocols are registered, send initial messages here
 		ProtocolID() int // Returns the protocol ID
+		Self() *net.Host // Returns the host of the protocol - basically forces you to keep your own host.
 	}
 
 	ProtoProtocol struct {
 		protocol Protocol
+		self     *net.Host
 
 		timerChannel   chan Timer
 		messageChannel chan Message
 
 		msgSerializers map[int]Serializer
 
-		msgHandlers   map[int]func(msg Message) // TODO: this is never going to receive a Message, it's going to still receive a Buffer
+		msgHandlers   map[int]func(msg Message)
 		timerHandlers map[int]func(timer Timer)
 	}
 )
 
-func NewProtoProtocol(protocol Protocol) *ProtoProtocol {
+func NewProtoProtocol(protocol Protocol, self *net.Host) *ProtoProtocol {
 	return &ProtoProtocol{
 		protocol: protocol,
+		self:     self,
 
 		msgSerializers: make(map[int]Serializer),
 
@@ -49,8 +52,12 @@ func (p *ProtoProtocol) Init() {
 	p.protocol.Init()
 }
 
-func (p *ProtoProtocol) RegisterMessageHandler(message Message, handler func(Message)) {
-	p.msgHandlers[message.MessageID()] = handler
+func (p *ProtoProtocol) RegisterMessageSerializer(messageID int, serializer Serializer) {
+	p.msgSerializers[messageID] = serializer
+}
+
+func (p *ProtoProtocol) RegisterMessageHandler(messageID int, handler func(Message)) {
+	p.msgHandlers[messageID] = handler
 }
 
 func (p *ProtoProtocol) RegisterTimerHandler(timer Timer, handler func(Timer)) {
@@ -83,7 +90,7 @@ func (p *ProtoProtocol) MessageChannel() chan Message {
 }
 
 // SendMessage sends a message to a host via the Network Layer.
-func SendMessage(msg Message, host *net.Host) {
+func SendMessage(msg Message, sendTo *net.Host) {
 	msgBuffer, err := msg.Serializer().Serialize()
 	if err != nil {
 		// TODO: Replace with decent logger event.
@@ -93,7 +100,7 @@ func SendMessage(msg Message, host *net.Host) {
 	buffer := new(bytes.Buffer)
 
 	// Serialize the sender's Host
-	senderHostBuffer, _ := net.SerializeHost(host)
+	senderHostBuffer, _ := net.SerializeHost(msg.Sender())
 	buffer.Write(senderHostBuffer.Bytes())
 
 	// Serialize ProtocolID and MessageID
@@ -111,6 +118,6 @@ func SendMessage(msg Message, host *net.Host) {
 
 	buffer.Write(msgBuffer.Bytes())
 
-	networkMessage := net.NewNetworkMessage(buffer, host)
+	networkMessage := net.NewNetworkMessage(buffer, sendTo)
 	GetRuntimeInstance().networkLayer.Send(networkMessage)
 }

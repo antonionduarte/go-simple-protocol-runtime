@@ -13,7 +13,7 @@ type (
 		MessageID() int
 		ProtocolID() int
 		Serializer() Serializer
-		Sender() net.Host
+		Sender() *net.Host
 	}
 
 	Serializer interface {

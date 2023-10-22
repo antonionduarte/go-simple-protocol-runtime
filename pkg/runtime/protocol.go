@@ -102,11 +102,13 @@ func SendMessage(msg Message, host *net.Host) {
 	if err != nil {
 		return
 	}
+
 	messageID := uint16(msg.MessageID())
 	err = binary.Write(buffer, binary.LittleEndian, messageID)
 	if err != nil {
 		return
 	}
+
 	buffer.Write(msgBuffer.Bytes())
 
 	networkMessage := net.NewNetworkMessage(buffer, host)

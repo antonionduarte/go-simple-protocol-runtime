@@ -10,6 +10,8 @@ Simple protocol runtime in Go.
 - [ ] Implement timer functionality.
 - [ ] Implement configuration file parser.
 - [ ] Add contexts **everywhere** in order to gracefully finish the runtime and it's experiments.
+- [ ] Decide how I actually want to manage the self Host.
+
 
 ## Net layer:
 

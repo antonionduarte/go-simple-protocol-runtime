@@ -28,6 +28,18 @@ func GetRuntimeInstance() *Runtime {
 	return instance
 }
 
+// RegisterMessageHandler registers a message handler to the instance.
+func RegisterMessageHandler(protocolID int, messageID int, handler func(Message)) {
+	runtime := GetRuntimeInstance()
+	runtime.protocols[protocolID].RegisterMessageHandler(messageID, handler)
+}
+
+// RegisterMessageSerializer registers a message serializer to the instance.
+func RegisterMessageSerializer(protocolID int, messageID int, serializer Serializer) {
+	runtime := GetRuntimeInstance()
+	runtime.protocols[protocolID].RegisterMessageSerializer(messageID, serializer)
+}
+
 // Start starts the instance, and runs the start and init function for all the protocols.
 func (r *Runtime) Start() {
 	if r.networkLayer == nil {

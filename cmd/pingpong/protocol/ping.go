@@ -28,16 +28,13 @@ func NewPingPongProtocol(self *net.Host) *PingPongProtocol {
 /*----------- Mandatory Methods ----------- */
 
 func (p *PingPongProtocol) Start() {
-	instance := runtime.GetRuntimeInstance()
-	proto := instance.GetProtocol(PingPongProtocolId)
-
-	proto.RegisterMessageHandler(1, p.HandlePing)
-	proto.RegisterMessageHandler(2, p.HandlePong)
+	runtime.RegisterMessageHandler(PingPongProtocolId, 1, p.HandlePing)
+	runtime.RegisterMessageHandler(PingPongProtocolId, 2, p.HandlePong)
 
 	// ...
 
-	proto.RegisterMessageSerializer(1, &PingSerializer{})
-	proto.RegisterMessageSerializer(2, &PongSerializer{})
+	runtime.RegisterMessageSerializer(PingPongProtocolId, 1, &PingSerializer{})
+	runtime.RegisterMessageSerializer(PingPongProtocolId, 2, &PongSerializer{})
 }
 
 func (p *PingPongProtocol) Init() {

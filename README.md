@@ -11,7 +11,7 @@ Simple protocol runtime in Go.
 - [ ] Implement configuration file parser.
 - [ ] Add contexts **everywhere** in order to gracefully finish the runtime and it's experiments.
 - [ ] Decide how I actually want to manage the self Host.
-
+- [ ] Protocols might (will) want to send messages to each other, as such I should probably add protocolID as an argument to the Send function.
 
 ## Net layer:
 

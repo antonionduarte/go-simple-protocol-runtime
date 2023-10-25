@@ -15,6 +15,7 @@ type (
 	}
 )
 
+// NewTCPLayer creates a new TCPLayer and starts the listener
 func NewTCPLayer(self *Host) *TCPLayer {
 	tcpLayer := &TCPLayer{
 		outChannel:        make(chan *NetworkMessage, 10),
@@ -27,6 +28,7 @@ func NewTCPLayer(self *Host) *TCPLayer {
 	return tcpLayer
 }
 
+// Send sends a message to the specified host
 func (t *TCPLayer) Send(networkMessage *NetworkMessage) {
 	t.mutex.Lock()
 	conn, ok := t.activeConnections[networkMessage.Host]
@@ -44,6 +46,7 @@ func (t *TCPLayer) Send(networkMessage *NetworkMessage) {
 	}
 }
 
+// Connect connects to the specified host
 func (t *TCPLayer) Connect(host *Host) {
 	conn, err := net.Dial("tcp", host.ToString())
 	if err != nil {
@@ -58,6 +61,7 @@ func (t *TCPLayer) Connect(host *Host) {
 	t.outChannelEvents <- ConnConnected
 }
 
+// Disconnect disconnects from the specified host
 func (t *TCPLayer) Disconnect(host *Host) {
 	t.mutex.Lock()
 	conn, ok := t.activeConnections[host]
@@ -75,14 +79,17 @@ func (t *TCPLayer) Disconnect(host *Host) {
 	}
 }
 
+// OutChannel returns the channel for outgoing messages
 func (t *TCPLayer) OutChannel() chan *NetworkMessage {
 	return t.outChannel
 }
 
+// OutChannelEvents returns the channel for outgoing events
 func (t *TCPLayer) OutChannelEvents() chan ConnEvents {
 	return t.outChannelEvents
 }
 
+// start starts the listener
 func (t *TCPLayer) start(self *Host) {
 	listener, err := net.Listen("tcp", self.ToString())
 	if err != nil {
@@ -111,6 +118,7 @@ func (t *TCPLayer) start(self *Host) {
 	}
 }
 
+// handleConnection handles a single tcp connection
 func (t *TCPLayer) handleConnection(conn net.Conn, host *Host) {
 	buf := make([]byte, 1024)
 	for {

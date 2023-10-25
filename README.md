@@ -13,6 +13,21 @@ Simple protocol runtime in Go. (heavily inspired by [Babel](https://github.com/p
 - [ ] Add contexts **everywhere** in order to gracefully finish the runtime and it's experiments.
 - [ ] Decide how I actually want to manage the self Host.
 - [ ] Protocols might (will) want to send messages to each other, as such I should probably add protocolID as an argument to the Send function.
+- [ ] I want message not to include the host that I received the message from, new message interface should be:
+
+```go
+package main
+
+type Message struct{}
+type Host struct{}
+
+type ProtoProtocol struct {
+	msgHandlers map[int]func(msg Message, from Host)
+}
+
+func SendMessage(msg Message, sendTo Host) {}
+```
+- [ ] Consider copying Hosts around as values instead of using references. 
 
 ## Net layer:
 

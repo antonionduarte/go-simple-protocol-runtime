@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"bytes"
+	"encoding/binary"
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 )
 
@@ -21,3 +22,35 @@ type (
 		Deserialize(buffer *bytes.Buffer) (Message, error)
 	}
 )
+
+func SendMessage(msg Message, sendTo *net.Host) {
+	msgBuffer, err := msg.Serializer().Serialize()
+	if err != nil {
+		// TODO: Replace with decent logger event.
+	}
+
+	// Create a buffer and write Sender's Host, ProtocolID, MessageID, and the message.
+	buffer := new(bytes.Buffer)
+
+	// Serialize the sender's Host
+	senderHostBuffer, _ := net.SerializeHost(msg.Sender())
+	buffer.Write(senderHostBuffer.Bytes())
+
+	// Serialize ProtocolID and MessageID
+	protocolID := uint16(msg.ProtocolID())
+	err = binary.Write(buffer, binary.LittleEndian, protocolID)
+	if err != nil {
+		return
+	}
+
+	messageID := uint16(msg.MessageID())
+	err = binary.Write(buffer, binary.LittleEndian, messageID)
+	if err != nil {
+		return
+	}
+
+	buffer.Write(msgBuffer.Bytes())
+
+	networkMessage := net.NewNetworkMessage(buffer, sendTo)
+	GetRuntimeInstance().networkLayer.Send(networkMessage)
+}

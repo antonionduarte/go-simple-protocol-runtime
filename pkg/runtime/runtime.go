@@ -4,13 +4,15 @@ import (
 	"encoding/binary"
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 	"sync"
+	"time"
 )
 
 type Runtime struct {
-	msgChannel   chan Message
-	timerChannel chan Timer
-	protocols    map[int]*ProtoProtocol
-	networkLayer net.NetworkLayer
+	msgChannel    chan Message
+	timerChannel  chan Timer
+	ongoingTimers map[int]*time.Timer
+	protocols     map[int]*ProtoProtocol
+	networkLayer  net.NetworkLayer
 }
 
 var instance *Runtime
@@ -82,6 +84,18 @@ func (r *Runtime) eventHandler() {
 	}
 }
 
+func (r *Runtime) startProtocols() {
+	for _, protocol := range r.protocols {
+		protocol.Start()
+	}
+}
+
+func (r *Runtime) initProtocols() {
+	for _, protocol := range r.protocols {
+		protocol.Init()
+	}
+}
+
 // receiveMessage receives a message from the Network Layer.
 func receiveMessage(networkMessage *net.NetworkMessage) {
 	buffer := networkMessage.Msg
@@ -110,16 +124,4 @@ func receiveMessage(networkMessage *net.NetworkMessage) {
 	}
 
 	protocol.messageChannel <- message
-}
-
-func (r *Runtime) startProtocols() {
-	for _, protocol := range r.protocols {
-		protocol.Start()
-	}
-}
-
-func (r *Runtime) initProtocols() {
-	for _, protocol := range r.protocols {
-		protocol.Init()
-	}
 }

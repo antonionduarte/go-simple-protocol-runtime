@@ -20,9 +20,8 @@ type (
 		messageChannel chan Message
 
 		msgSerializers map[int]Serializer
-
-		msgHandlers   map[int]func(msg Message)
-		timerHandlers map[int]func(timer Timer)
+		msgHandlers    map[int]func(msg Message)
+		timerHandlers  map[int]func(timer Timer)
 	}
 )
 

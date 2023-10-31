@@ -12,32 +12,44 @@ type (
 )
 
 // TODO: I don't know if this is enough, because I might want to have several timers for the same timerID.
+// TODO: I'm using mutexes here, maybe create some kind of TimerManager that handles all the timers through channels.
 
 func SetupTimer(timer Timer, duration time.Duration) {
-	// TODO: I think i have a race condition here. CHANGED MY MIND. THESE DEFINITELY HAVE RACE CONDITIONS.
-	instance := GetRuntimeInstance()
+	runtime := GetRuntimeInstance()
 	goTimer := time.AfterFunc(duration, func() {
-		instance.timerChannel <- timer
-		delete(instance.ongoingTimers, timer.TimerID())
+		runtime.timerChannel <- timer
+		runtime.timerMutex.Lock()
+		delete(runtime.ongoingTimers, timer.TimerID())
+		runtime.timerMutex.Unlock()
 	})
-	instance.ongoingTimers[timer.TimerID()] = goTimer
+	runtime.timerMutex.Lock()
+	runtime.ongoingTimers[timer.TimerID()] = goTimer
+	runtime.timerMutex.Unlock()
 }
 
 func CancelTimer(timerID int) {
-	// TODO: I think i have a race condition here.
-	instance := GetRuntimeInstance()
-	goTimer := instance.ongoingTimers[timerID]
+	runtime := GetRuntimeInstance()
+	runtime.timerMutex.Lock()
+	// TODO: Handle error
+	goTimer := runtime.ongoingTimers[timerID]
+	runtime.timerMutex.Unlock()
 	goTimer.Stop()
-	delete(instance.ongoingTimers, timerID)
+	delete(runtime.ongoingTimers, timerID)
 }
 
 func SetupPeriodicTimer(timer Timer, duration time.Duration) {
-	// TODO: I think i have a race condition here.
-	instance := GetRuntimeInstance()
+	runtime := GetRuntimeInstance()
 	goTimer := time.AfterFunc(duration, func() {
-		instance.timerChannel <- timer
-		delete(instance.ongoingTimers, timer.TimerID())
+		runtime.timerChannel <- timer
+
+		runtime.timerMutex.Lock()
+		delete(runtime.ongoingTimers, timer.TimerID())
+		runtime.timerMutex.Unlock()
+
 		SetupPeriodicTimer(timer, duration)
 	})
-	instance.ongoingTimers[timer.TimerID()] = goTimer
+
+	runtime.timerMutex.Lock()
+	runtime.ongoingTimers[timer.TimerID()] = goTimer
+	runtime.timerMutex.Unlock()
 }

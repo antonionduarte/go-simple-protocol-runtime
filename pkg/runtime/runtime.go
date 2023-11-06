@@ -11,8 +11,8 @@ import (
 type Runtime struct {
 	msgChannel    chan Message
 	timerChannel  chan Timer
-	ongoingTimers map[int]*time.Timer
 	timerMutex    sync.Mutex
+	ongoingTimers map[int]*time.Timer
 	protocols     map[int]*ProtoProtocol
 	networkLayer  net.NetworkLayer
 }

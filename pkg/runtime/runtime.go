@@ -2,9 +2,10 @@ package runtime
 
 import (
 	"encoding/binary"
-	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 	"sync"
 	"time"
+
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 )
 
 type Runtime struct {

@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime"
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 )

@@ -11,9 +11,6 @@ type (
 	}
 )
 
-// TODO: I don't know if this is enough, because I might want to have several timers for the same timerID.
-// TODO: I'm using mutexes here, maybe create some kind of TimerManager that handles all the timers through channels.
-
 func SetupTimer(timer Timer, duration time.Duration) {
 	runtime := GetRuntimeInstance()
 	goTimer := time.AfterFunc(duration, func() {
@@ -30,7 +27,6 @@ func SetupTimer(timer Timer, duration time.Duration) {
 func CancelTimer(timerID int) {
 	runtime := GetRuntimeInstance()
 	runtime.timerMutex.Lock()
-	// TODO: Handle error
 	goTimer := runtime.ongoingTimers[timerID]
 	runtime.timerMutex.Unlock()
 	goTimer.Stop()

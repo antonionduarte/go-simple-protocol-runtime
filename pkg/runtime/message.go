@@ -3,6 +3,7 @@ package runtime
 import (
 	"bytes"
 	"encoding/binary"
+
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 )
 
@@ -40,13 +41,13 @@ func SendMessage(msg Message, sendTo *net.Host) {
 	protocolID := uint16(msg.ProtocolID())
 	err = binary.Write(buffer, binary.LittleEndian, protocolID)
 	if err != nil {
-		return
+		return // TODO: Properly log this error
 	}
 
 	messageID := uint16(msg.MessageID())
 	err = binary.Write(buffer, binary.LittleEndian, messageID)
 	if err != nil {
-		return
+		return // TODO: Properly log this error
 	}
 
 	buffer.Write(msgBuffer.Bytes())

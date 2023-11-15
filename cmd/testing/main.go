@@ -8,7 +8,6 @@ import (
 func main() {
 	host := net.Host{Port: 8080, IP: "192.168.0.1"}
 	serialized, _ := net.SerializeHost(&host)
-
 	deserialized, _ := net.DeserializeHost(&serialized)
 	// fmt.Printf(host.IP)
 	// fmt.Printf(deserialized.IP + ":")

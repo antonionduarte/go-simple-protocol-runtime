@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
+	"golang.org/x/net/context"
 )
 
 type (
@@ -40,9 +41,9 @@ func NewProtoProtocol(protocol Protocol, self *net.Host) *ProtoProtocol {
 	}
 }
 
-func (p *ProtoProtocol) Start() {
+func (p *ProtoProtocol) Start(ctx context.Context) {
 	p.protocol.Start()
-	go p.EventHandler()
+	go p.EventHandler(ctx)
 }
 
 func (p *ProtoProtocol) Init() {
@@ -61,9 +62,11 @@ func (p *ProtoProtocol) RegisterTimerHandler(timer Timer, handler func(Timer)) {
 	p.timerHandlers[timer.TimerID()] = handler
 }
 
-func (p *ProtoProtocol) EventHandler() {
+func (p *ProtoProtocol) EventHandler(ctx context.Context) {
 	for {
 		select {
+		case <-ctx.Done():
+			break
 		case msg := <-p.messageChannel:
 			handler := p.msgHandlers[msg.MessageID()]
 			handler(msg)

@@ -8,7 +8,7 @@ Simple protocol runtime in Go. (heavily inspired by [Babel](https://github.com/p
 - [X] Implement network layer, for TCP initially, if anyone wants UDP or QUIC they can add it themselves.
 - [ ] Implement inter-protocol communication, so that we can send messages between protocols within same Runtime.
 - [ ] Implement a simple protocol, which can send and receive messages to test this.
-- [ ] Implement timer functionality.
+- [X] Implement timer functionality.
 - [ ] Implement configuration file parser.
 - [ ] Add contexts **everywhere** in order to gracefully finish the runtime and it's experiments.
 - [ ] Decide how I actually want to manage the self Host.

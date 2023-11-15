@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"encoding/binary"
 	"sync"
 	"time"
@@ -9,6 +10,7 @@ import (
 )
 
 type Runtime struct {
+	cancelFunc    func() // TODO: Should I do this? Is this idiomatic?
 	msgChannel    chan Message
 	timerChannel  chan Timer
 	timerMutex    sync.Mutex
@@ -51,8 +53,12 @@ func (r *Runtime) Start() {
 		panic("Network layer not registered")
 	}
 
+	ctx := context.Background()
+	context, cancel := context.WithCancel(ctx)
+	r.cancelFunc = cancel
+
 	r.eventHandler()
-	r.startProtocols()
+	r.startProtocols(context)
 	r.initProtocols()
 }
 
@@ -71,6 +77,10 @@ func (r *Runtime) RegisterNetworkLayer(networkLayer net.NetworkLayer) {
 	r.networkLayer = networkLayer
 }
 
+func (r *Runtime) Cancel() {
+	r.cancelFunc()
+}
+
 func (r *Runtime) eventHandler() {
 	for {
 		select {
@@ -86,9 +96,9 @@ func (r *Runtime) eventHandler() {
 	}
 }
 
-func (r *Runtime) startProtocols() {
+func (r *Runtime) startProtocols(ctx context.Context) {
 	for _, protocol := range r.protocols {
-		protocol.Start()
+		protocol.Start(ctx)
 	}
 }
 

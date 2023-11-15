@@ -79,6 +79,7 @@ func (r *Runtime) RegisterNetworkLayer(networkLayer net.NetworkLayer) {
 
 func (r *Runtime) Cancel() {
 	r.cancelFunc()
+	r.networkLayer.Cancel()
 }
 
 func (r *Runtime) eventHandler() {

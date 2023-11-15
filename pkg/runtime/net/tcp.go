@@ -30,6 +30,10 @@ func NewTCPLayer(self *Host) *TCPLayer {
 	return tcpLayer
 }
 
+func (t *TCPLayer) Cancel() {
+	t.cancelFunc()
+}
+
 // Send sends a message to the specified host
 func (t *TCPLayer) Send(networkMessage *NetworkMessage) {
 	t.mutex.Lock()

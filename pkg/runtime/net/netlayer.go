@@ -9,6 +9,7 @@ type (
 		Send(msg *NetworkMessage)
 		OutChannel() chan *NetworkMessage
 		OutChannelEvents() chan ConnEvents
+		Cancel()
 	}
 
 	NetworkMessage struct {

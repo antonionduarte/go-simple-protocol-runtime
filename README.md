@@ -12,9 +12,10 @@ Simple protocol runtime in Go. (heavily inspired by [Babel](https://github.com/p
 - [ ] Implement configuration file parser.
 - [X] Add contexts **everywhere** in order to gracefully finish the runtime and it's experiments.
 - [ ] Decide how I actually want to manage the self Host.
-- [ ] Protocols might (will) want to send messages to each other, as such I should probably add protocolID as an argument to the Send function.
 - [ ] I want message not to include the host that I received the message from, new message interface should be:
 - [ ] Decide correctly which static functions should be in which file, possibly ask GPT-4 about it his answer will be correct. 
+- [ ] Should the cancelation of the runtime be called at the runtime level or?
+- [ ] Should the network layer be generic by itself and abstract stuff like cancelation?
 
 ```go
 package main

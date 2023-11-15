@@ -73,13 +73,15 @@ func (r *Runtime) RegisterProtocol(protocol *ProtoProtocol) {
 	r.protocols[protocol.ProtocolID()] = protocol
 }
 
+// RegisterNetworkLayer registers the network layer that this runtime will use.
+// It takes in the NetworkLayer that you're going to use. e.g. (pkg/runtime/net/tcp.go)
 func (r *Runtime) RegisterNetworkLayer(networkLayer net.NetworkLayer) {
 	r.networkLayer = networkLayer
 }
 
 func (r *Runtime) Cancel() {
-	r.cancelFunc()
-	r.networkLayer.Cancel()
+	r.cancelFunc()          // this finishes execution of all the protocols
+	r.networkLayer.Cancel() // this finishes execution of the network layer
 }
 
 func (r *Runtime) eventHandler() {

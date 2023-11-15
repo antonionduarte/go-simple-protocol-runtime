@@ -16,6 +16,7 @@ Simple protocol runtime in Go. (heavily inspired by [Babel](https://github.com/p
 - [ ] Decide correctly which static functions should be in which file, possibly ask GPT-4 about it his answer will be correct. 
 - [ ] Should the cancelation of the runtime be called at the runtime level or?
 - [ ] Should the network layer be generic by itself and abstract stuff like cancelation?
+- [ ] Some mechanism for the main thread to actually finish execution.
 
 ```go
 package main

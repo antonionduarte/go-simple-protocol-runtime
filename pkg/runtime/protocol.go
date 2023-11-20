@@ -3,6 +3,7 @@ package runtime
 import (
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 	"golang.org/x/net/context"
+	"sync"
 )
 
 type (
@@ -14,12 +15,10 @@ type (
 	}
 
 	ProtoProtocol struct {
-		protocol Protocol
-		self     *net.Host
-
+		protocol       Protocol
+		self           *net.Host
 		timerChannel   chan Timer
 		messageChannel chan Message
-
 		msgSerializers map[int]Serializer
 		msgHandlers    map[int]func(msg Message)
 		timerHandlers  map[int]func(timer Timer)
@@ -41,9 +40,10 @@ func NewProtoProtocol(protocol Protocol, self *net.Host) *ProtoProtocol {
 	}
 }
 
-func (p *ProtoProtocol) Start(ctx context.Context) {
+func (p *ProtoProtocol) Start(ctx context.Context, wg *sync.WaitGroup) {
+	wg.Add(1)
 	p.protocol.Start()
-	go p.EventHandler(ctx)
+	go p.eventHandler(ctx, wg)
 }
 
 func (p *ProtoProtocol) Init() {
@@ -62,21 +62,6 @@ func (p *ProtoProtocol) RegisterTimerHandler(timer Timer, handler func(Timer)) {
 	p.timerHandlers[timer.TimerID()] = handler
 }
 
-func (p *ProtoProtocol) EventHandler(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			break
-		case msg := <-p.messageChannel:
-			handler := p.msgHandlers[msg.MessageID()]
-			handler(msg)
-		case timer := <-p.timerChannel:
-			handler := p.timerHandlers[timer.TimerID()]
-			handler(timer)
-		}
-	}
-}
-
 func (p *ProtoProtocol) ProtocolID() int {
 	return p.protocol.ProtocolID()
 }
@@ -87,4 +72,20 @@ func (p *ProtoProtocol) TimerChannel() chan Timer {
 
 func (p *ProtoProtocol) MessageChannel() chan Message {
 	return p.messageChannel
+}
+
+func (p *ProtoProtocol) eventHandler(ctx context.Context, wg *sync.WaitGroup) {
+	wg.Done()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg := <-p.messageChannel:
+			handler := p.msgHandlers[msg.MessageID()]
+			handler(msg)
+		case timer := <-p.timerChannel:
+			handler := p.timerHandlers[timer.TimerID()]
+			handler(timer)
+		}
+	}
 }

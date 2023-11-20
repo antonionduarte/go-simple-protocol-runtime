@@ -98,7 +98,7 @@ func (t *TCPLayer) OutChannelEvents() chan ConnEvents {
 // start starts the listener
 func (t *TCPLayer) start(self *Host) {
 	ctx := context.Background()
-	context, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(ctx)
 	t.cancelFunc = cancel
 
 	listener, err := net.Listen("tcp", self.ToString())
@@ -124,7 +124,7 @@ func (t *TCPLayer) start(self *Host) {
 
 		t.outChannelEvents <- ConnConnected // Connection established
 
-		go t.handleConnection(context, conn, host)
+		go t.handleConnection(ctx, conn, host)
 	}
 }
 
@@ -136,7 +136,7 @@ func (t *TCPLayer) handleConnection(ctx context.Context, conn net.Conn, host *Ho
 		//  TODO: I'm not sure if this works test later.
 		select {
 		case <-ctx.Done():
-			break
+			return
 		default:
 			_, err := conn.Read(buf)
 			if err != nil {

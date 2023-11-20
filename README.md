@@ -17,6 +17,7 @@ Simple protocol runtime in Go. (heavily inspired by [Babel](https://github.com/p
 - [ ] Should the cancelation of the runtime be called at the runtime level or?
 - [ ] Should the network layer be generic by itself and abstract stuff like cancelation?
 - [ ] Some mechanism for the main thread to actually finish execution.
+- [ ] Propper channel management, I believe i'm not actually properly closing channels yet.
 
 ```go
 package main

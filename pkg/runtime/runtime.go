@@ -3,10 +3,14 @@ package runtime
 import (
 	"context"
 	"encoding/binary"
+	"io"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type Runtime struct {
@@ -14,6 +18,7 @@ type Runtime struct {
 	msgChannel    chan Message
 	timerChannel  chan Timer
 	timerMutex    sync.Mutex
+	wg            sync.WaitGroup
 	ongoingTimers map[int]*time.Timer
 	protocols     map[int]*ProtoProtocol
 	networkLayer  net.NetworkLayer
@@ -54,12 +59,20 @@ func (r *Runtime) Start() {
 	}
 
 	ctx := context.Background()
-	context, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(ctx)
 	r.cancelFunc = cancel
 
-	r.eventHandler()
-	r.startProtocols(context)
+	r.startProtocols(ctx)
 	r.initProtocols()
+	r.wg.Add(1)
+	go r.eventHandler(ctx)
+}
+
+func (r *Runtime) StartWithDuration(duration time.Duration) {
+	r.Start()
+	time.AfterFunc(duration, func() {
+		r.Cancel()
+	})
 }
 
 // GetProtocol returns a protocol from the instance.
@@ -82,11 +95,15 @@ func (r *Runtime) RegisterNetworkLayer(networkLayer net.NetworkLayer) {
 func (r *Runtime) Cancel() {
 	r.cancelFunc()          // this finishes execution of all the protocols
 	r.networkLayer.Cancel() // this finishes execution of the network layer
+	r.wg.Wait()
 }
 
-func (r *Runtime) eventHandler() {
+func (r *Runtime) eventHandler(ctx context.Context) {
+	defer r.wg.Done()
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case msg := <-r.msgChannel:
 			protocol := r.protocols[msg.ProtocolID()]
 			protocol.MessageChannel() <- msg
@@ -101,7 +118,7 @@ func (r *Runtime) eventHandler() {
 
 func (r *Runtime) startProtocols(ctx context.Context) {
 	for _, protocol := range r.protocols {
-		protocol.Start(ctx)
+		protocol.Start(ctx, &r.wg)
 	}
 }
 
@@ -109,6 +126,24 @@ func (r *Runtime) initProtocols() {
 	for _, protocol := range r.protocols {
 		protocol.Init()
 	}
+}
+
+func (r *Runtime) setupLogger() {
+	currentDate := time.Now().Format("2006-01-02")
+	fileName := currentDate + ".log"
+
+	file, err := os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatalf("Failed to open log file: %v", err)
+	}
+	defer func(file *os.File) {
+		_ = file.Close()
+	}(file)
+
+	mw := io.MultiWriter(os.Stdout, file)
+	log.SetOutput(mw)
+
+	log.Info("This is a log message")
 }
 
 // receiveMessage receives a message from the Network Layer.
@@ -125,8 +160,7 @@ func receiveMessage(networkMessage *net.NetworkMessage) {
 		return
 	}
 
-	runtimeInstance := GetRuntimeInstance()
-	protocol, exists := runtimeInstance.protocols[int(protocolID)]
+	protocol, exists := instance.protocols[int(protocolID)]
 	if !exists {
 		// TODO: Handle the error (unknown protocol)
 		return

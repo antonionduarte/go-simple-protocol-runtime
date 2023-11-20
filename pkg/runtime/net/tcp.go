@@ -141,14 +141,15 @@ func (t *TCPLayer) handleConnection(ctx context.Context, conn net.Conn, host *Ho
 		case <-ctx.Done():
 			return
 		default:
-			_, err := conn.Read(buf)
+			numberBytes, err := conn.Read(buf)
 			if err != nil {
 				t.Disconnect(host) // Disconnect on error and handle event
 				return
 			}
+			message := buf[:numberBytes]
 
 			var byteBuffer bytes.Buffer
-			byteBuffer.Write(buf)
+			byteBuffer.Write(message)
 			t.outChannel <- &NetworkMessage{host, &byteBuffer}
 		}
 	}

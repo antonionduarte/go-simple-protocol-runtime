@@ -59,7 +59,6 @@ func (t *TCPLayer) Connect(host *Host) {
 	if err != nil {
 		t.outChannelEvents <- ConnFailed
 		// TODO: Proper logging
-		println(err.Error())
 		return
 	}
 

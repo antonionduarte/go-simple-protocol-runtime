@@ -14,6 +14,7 @@ type (
 		outChannelEvents  chan ConnEvents
 		activeConnections map[*Host]net.Conn
 		mutex             sync.Mutex // Mutex to protect concurrent access to activeConnections
+		listener          net.Listener
 	}
 )
 
@@ -57,6 +58,8 @@ func (t *TCPLayer) Connect(host *Host) {
 	conn, err := net.Dial("tcp", host.ToString())
 	if err != nil {
 		t.outChannelEvents <- ConnFailed
+		// TODO: Proper logging
+		println(err.Error())
 		return
 	}
 
@@ -102,6 +105,7 @@ func (t *TCPLayer) start(self *Host) {
 	t.cancelFunc = cancel
 
 	listener, err := net.Listen("tcp", self.ToString())
+	t.listener = listener
 	if err != nil {
 		// TODO: Handle error
 		return

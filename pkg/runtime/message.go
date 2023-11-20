@@ -30,14 +30,14 @@ func SendMessage(msg Message, sendTo *net.Host) {
 		// TODO: Replace with decent logger event.
 	}
 
-	// Create a buffer and write Sender's Host, ProtocolID, MessageID, and the message.
+	// Create a buffer and write Sender's Host, ProtoID, MessageID, and the message.
 	buffer := new(bytes.Buffer)
 
 	// Serialize the sender's Host
 	senderHostBuffer, _ := net.SerializeHost(msg.Sender())
 	buffer.Write(senderHostBuffer.Bytes())
 
-	// Serialize ProtocolID and MessageID
+	// Serialize ProtoID and MessageID
 	protocolID := uint16(msg.ProtocolID())
 	err = binary.Write(buffer, binary.LittleEndian, protocolID)
 	if err != nil {

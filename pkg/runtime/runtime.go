@@ -62,7 +62,7 @@ func (r *Runtime) Start() {
 	ctx, cancel := context.WithCancel(ctx)
 	r.cancelFunc = cancel
 
-	r.startProtocols(ctx)
+	r.startProtocols(ctx) // TODO: pass it the waitgroup
 	r.initProtocols()
 	r.wg.Add(1)
 	go r.eventHandler(ctx)

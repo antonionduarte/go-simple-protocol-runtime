@@ -79,7 +79,7 @@ func (t *TCPLayer) Disconnect(host *Host) {
 	if ok {
 		err := conn.Close()
 		if err != nil {
-			// Additional logging can be done here if necessary
+			// TODO: Additional logging can be done here if necessary
 		}
 		t.outChannelEvents <- ConnDisconnected
 	}
@@ -103,14 +103,14 @@ func (t *TCPLayer) start(self *Host) {
 
 	listener, err := net.Listen("tcp", self.ToString())
 	if err != nil {
-		// Handle error
+		// TODO: Handle error
 		return
 	}
 
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			// Handle error
+			// TODO: Handle error
 			continue
 		}
 

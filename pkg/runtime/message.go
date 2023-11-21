@@ -15,16 +15,16 @@ type (
 		MessageID() int
 		ProtocolID() int
 		Serializer() Serializer
-		Sender() *net.Host
+		Sender() net.Host
 	}
 
 	Serializer interface {
-		Serialize() (*bytes.Buffer, error)
-		Deserialize(buffer *bytes.Buffer) (Message, error)
+		Serialize() (bytes.Buffer, error)
+		Deserialize(buffer bytes.Buffer) (Message, error)
 	}
 )
 
-func SendMessage(msg Message, sendTo *net.Host) {
+func SendMessage(msg Message, sendTo net.Host) {
 	msgBuffer, err := msg.Serializer().Serialize()
 	if err != nil {
 		// TODO: Replace with decent logger event.
@@ -52,6 +52,6 @@ func SendMessage(msg Message, sendTo *net.Host) {
 
 	buffer.Write(msgBuffer.Bytes())
 
-	networkMessage := net.NewNetworkMessage(buffer, sendTo)
+	networkMessage := net.NewNetworkMessage(*buffer, sendTo)
 	GetRuntimeInstance().networkLayer.Send(networkMessage)
 }

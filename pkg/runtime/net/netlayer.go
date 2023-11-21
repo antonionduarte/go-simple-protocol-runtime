@@ -4,24 +4,24 @@ import "bytes"
 
 type (
 	NetworkLayer interface {
-		Connect(host *Host)
-		Disconnect(host *Host)
-		Send(msg *NetworkMessage)
-		OutChannel() chan *NetworkMessage
+		Connect(host Host)
+		Disconnect(host Host)
+		Send(msg NetworkMessage)
+		OutChannel() chan NetworkMessage
 		OutChannelEvents() chan ConnEvents
 		Cancel()
 	}
 
 	NetworkMessage struct {
-		Host *Host
-		Msg  *bytes.Buffer
+		Host Host
+		Msg  bytes.Buffer
 	}
 
 	ConnEvents int
 )
 
-func NewNetworkMessage(msg *bytes.Buffer, host *Host) *NetworkMessage {
-	return &NetworkMessage{Msg: msg, Host: host}
+func NewNetworkMessage(msg bytes.Buffer, host Host) NetworkMessage {
+	return NetworkMessage{Msg: msg, Host: host}
 }
 
 const (

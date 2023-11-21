@@ -147,15 +147,15 @@ func (r *Runtime) setupLogger() {
 }
 
 // receiveMessage receives a message from the Network Layer.
-func receiveMessage(networkMessage *net.NetworkMessage) {
+func receiveMessage(networkMessage net.NetworkMessage) {
 	buffer := networkMessage.Msg
 
 	var protocolID, messageID uint16
-	if err := binary.Read(buffer, binary.LittleEndian, &protocolID); err != nil {
+	if err := binary.Read(&buffer, binary.LittleEndian, &protocolID); err != nil {
 		// TODO: Handle the error
 		return
 	}
-	if err := binary.Read(buffer, binary.LittleEndian, &messageID); err != nil {
+	if err := binary.Read(&buffer, binary.LittleEndian, &messageID); err != nil {
 		// TODO: Handle the error
 		return
 	}

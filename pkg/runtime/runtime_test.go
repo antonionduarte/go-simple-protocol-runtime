@@ -1,8 +1,9 @@
 package runtime
 
 import (
-	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 	"testing"
+
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 )
 
 type MockProtocol struct {
@@ -36,20 +37,20 @@ type MockNetworkLayer struct {
 	StartCalled      bool
 }
 
-func (m *MockNetworkLayer) Connect(host *net.Host) {
+func (m *MockNetworkLayer) Connect(host net.Host) {
 	m.ConnectCalled = true
 }
 
-func (m *MockNetworkLayer) Disconnect(host *net.Host) {
+func (m *MockNetworkLayer) Disconnect(host net.Host) {
 	m.DisconnectCalled = true
 }
 
-func (m *MockNetworkLayer) Send(msg *net.NetworkMessage) {
+func (m *MockNetworkLayer) Send(msg net.NetworkMessage) {
 	m.SendCalled = true
 }
 
-func (m *MockNetworkLayer) OutChannel() chan *net.NetworkMessage {
-	return make(chan *net.NetworkMessage, 1)
+func (m *MockNetworkLayer) OutChannel() chan net.NetworkMessage {
+	return make(chan net.NetworkMessage, 1)
 }
 
 func (m *MockNetworkLayer) OutChannelEvents() chan net.ConnEvents {

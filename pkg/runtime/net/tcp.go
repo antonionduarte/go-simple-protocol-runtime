@@ -10,20 +10,21 @@ import (
 type (
 	TCPLayer struct {
 		cancelFunc        func() // TODO: Should I do this? Is this idiomatic?
-		outChannel        chan *NetworkMessage
+		outChannel        chan NetworkMessage
 		outChannelEvents  chan ConnEvents
-		activeConnections map[*Host]net.Conn
+		activeConnections map[Host]net.Conn
 		mutex             sync.Mutex // Mutex to protect concurrent access to activeConnections
 		listener          net.Listener
+		ctx               context.Context
 	}
 )
 
 // NewTCPLayer creates a new TCPLayer and starts the listener
-func NewTCPLayer(self *Host) *TCPLayer {
+func NewTCPLayer(self Host) *TCPLayer {
 	tcpLayer := &TCPLayer{
-		outChannel:        make(chan *NetworkMessage, 10),
+		outChannel:        make(chan NetworkMessage, 10),
 		outChannelEvents:  make(chan ConnEvents, 1),
-		activeConnections: make(map[*Host]net.Conn),
+		activeConnections: make(map[Host]net.Conn),
 	}
 
 	go tcpLayer.start(self) // Starting the listener in a goroutine
@@ -36,7 +37,7 @@ func (t *TCPLayer) Cancel() {
 }
 
 // Send sends a message to the specified host
-func (t *TCPLayer) Send(networkMessage *NetworkMessage) {
+func (t *TCPLayer) Send(networkMessage NetworkMessage) {
 	t.mutex.Lock()
 	conn, ok := t.activeConnections[networkMessage.Host]
 	t.mutex.Unlock()
@@ -54,23 +55,27 @@ func (t *TCPLayer) Send(networkMessage *NetworkMessage) {
 }
 
 // Connect connects to the specified host
-func (t *TCPLayer) Connect(host *Host) {
-	conn, err := net.Dial("tcp", host.ToString())
-	if err != nil {
-		t.outChannelEvents <- ConnFailed
-		// TODO: Proper logging
-		return
-	}
-
+func (t *TCPLayer) Connect(host Host) {
 	t.mutex.Lock()
-	t.activeConnections[host] = conn
+	_, ok := t.activeConnections[host]
+	if !ok {
+		conn, err := net.Dial("tcp", host.ToString())
+		t.activeConnections[host] = conn
+		if err != nil {
+			t.outChannelEvents <- ConnFailed
+			// TODO: Proper logging
+			return
+		}
+		// go t.handleConnection() TODO fix this ops
+	} else {
+		// TODO: Properly log that it's already in the active connections
+	}
 	t.mutex.Unlock()
-
 	t.outChannelEvents <- ConnConnected
 }
 
 // Disconnect disconnects from the specified host
-func (t *TCPLayer) Disconnect(host *Host) {
+func (t *TCPLayer) Disconnect(host Host) {
 	t.mutex.Lock()
 	conn, ok := t.activeConnections[host]
 	if ok {
@@ -88,7 +93,7 @@ func (t *TCPLayer) Disconnect(host *Host) {
 }
 
 // OutChannel returns the channel for outgoing messages
-func (t *TCPLayer) OutChannel() chan *NetworkMessage {
+func (t *TCPLayer) OutChannel() chan NetworkMessage {
 	return t.outChannel
 }
 
@@ -98,9 +103,11 @@ func (t *TCPLayer) OutChannelEvents() chan ConnEvents {
 }
 
 // start starts the listener
-func (t *TCPLayer) start(self *Host) {
+func (t *TCPLayer) start(self Host) {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
+
+	t.ctx = ctx
 	t.cancelFunc = cancel
 
 	listener, err := net.Listen("tcp", self.ToString())
@@ -132,11 +139,11 @@ func (t *TCPLayer) start(self *Host) {
 }
 
 // handleConnection handles a single tcp connection
-func (t *TCPLayer) handleConnection(ctx context.Context, conn net.Conn, host *Host) {
+// TODO: Super problematic, we *never* close this even when a connection dies!
+func (t *TCPLayer) handleConnection(ctx context.Context, conn net.Conn, host Host) {
 	buf := make([]byte, 1024)
 
 	for {
-		//  TODO: I'm not sure if this works test later.
 		select {
 		case <-ctx.Done():
 			return
@@ -150,7 +157,7 @@ func (t *TCPLayer) handleConnection(ctx context.Context, conn net.Conn, host *Ho
 
 			var byteBuffer bytes.Buffer
 			byteBuffer.Write(message)
-			t.outChannel <- &NetworkMessage{host, &byteBuffer}
+			t.outChannel <- NetworkMessage{host, byteBuffer}
 		}
 	}
 }

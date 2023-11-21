@@ -13,14 +13,14 @@ type Host struct {
 	IP   string
 }
 
-func NewHost(port int, ip string) *Host {
-	return &Host{
+func NewHost(port int, ip string) Host {
+	return Host{
 		Port: port,
 		IP:   ip,
 	}
 }
 
-func SerializeHost(host *Host) (bytes.Buffer, error) {
+func SerializeHost(host Host) (bytes.Buffer, error) {
 	var buffer bytes.Buffer
 
 	// Validate that the provided IP is a valid IPv4 address
@@ -40,8 +40,8 @@ func SerializeHost(host *Host) (bytes.Buffer, error) {
 	return buffer, nil
 }
 
-func DeserializeHost(buffer *bytes.Buffer) (*Host, error) {
-	host := &Host{}
+func DeserializeHost(buffer bytes.Buffer) (Host, error) {
+	host := Host{}
 
 	// Read the IP address as a fixed-length string of 15 bytes.
 	ipBytes := buffer.Next(15)
@@ -58,7 +58,7 @@ func DeserializeHost(buffer *bytes.Buffer) (*Host, error) {
 	return host, nil
 }
 
-func CompareHost(host1, host2 *Host) bool {
+func CompareHost(host1, host2 Host) bool {
 	return host1.IP == host2.IP && host1.Port == host2.Port
 }
 

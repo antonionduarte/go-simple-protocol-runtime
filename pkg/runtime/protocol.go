@@ -1,9 +1,10 @@
 package runtime
 
 import (
+	"sync"
+
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 	"golang.org/x/net/context"
-	"sync"
 )
 
 type (
@@ -16,7 +17,7 @@ type (
 
 	ProtoProtocol struct {
 		protocol       Protocol
-		self           *net.Host
+		self           net.Host
 		timerChannel   chan Timer
 		messageChannel chan Message
 		msgSerializers map[int]Serializer
@@ -25,7 +26,7 @@ type (
 	}
 )
 
-func NewProtoProtocol(protocol Protocol, self *net.Host) *ProtoProtocol {
+func NewProtoProtocol(protocol Protocol, self net.Host) *ProtoProtocol {
 	return &ProtoProtocol{
 		protocol: protocol,
 		self:     self,

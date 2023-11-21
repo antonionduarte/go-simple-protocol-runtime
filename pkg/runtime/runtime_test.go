@@ -45,12 +45,12 @@ func (m *MockNetworkLayer) Disconnect(host net.Host) {
 	m.DisconnectCalled = true
 }
 
-func (m *MockNetworkLayer) Send(msg net.NetworkMessage) {
+func (m *MockNetworkLayer) Send(msg net.TransportMessage) {
 	m.SendCalled = true
 }
 
-func (m *MockNetworkLayer) OutChannel() chan net.NetworkMessage {
-	return make(chan net.NetworkMessage, 1)
+func (m *MockNetworkLayer) OutChannel() chan net.TransportMessage {
+	return make(chan net.TransportMessage, 1)
 }
 
 func (m *MockNetworkLayer) OutChannelEvents() chan net.ConnEvents {

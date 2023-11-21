@@ -21,11 +21,13 @@ type Runtime struct {
 	wg            sync.WaitGroup
 	ongoingTimers map[int]*time.Timer
 	protocols     map[int]*ProtoProtocol
-	networkLayer  net.NetworkLayer
+	networkLayer  net.TransportLayer
 }
 
-var instance *Runtime
-var once sync.Once
+var (
+	instance *Runtime
+	once     sync.Once
+)
 
 // GetRuntimeInstance creates a new instance.
 func GetRuntimeInstance() *Runtime {
@@ -87,8 +89,8 @@ func (r *Runtime) RegisterProtocol(protocol *ProtoProtocol) {
 }
 
 // RegisterNetworkLayer registers the network layer that this runtime will use.
-// It takes in the NetworkLayer that you're going to use. e.g. (pkg/runtime/net/tcp.go)
-func (r *Runtime) RegisterNetworkLayer(networkLayer net.NetworkLayer) {
+// It takes in the TransportLayer that you're going to use. e.g. (pkg/runtime/net/tcp.go)
+func (r *Runtime) RegisterNetworkLayer(networkLayer net.TransportLayer) {
 	r.networkLayer = networkLayer
 }
 
@@ -147,7 +149,7 @@ func (r *Runtime) setupLogger() {
 }
 
 // receiveMessage receives a message from the Network Layer.
-func receiveMessage(networkMessage net.NetworkMessage) {
+func receiveMessage(networkMessage net.TransportMessage) {
 	buffer := networkMessage.Msg
 
 	var protocolID, messageID uint16

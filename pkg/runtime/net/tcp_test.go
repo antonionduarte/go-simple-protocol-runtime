@@ -51,7 +51,7 @@ func TestTCPLayerSendMessage(t *testing.T) {
 	clientLayer.Connect(serverHost) // TODO: The connect is failing
 
 	// Test sending a message from client to server
-	testMsg := NetworkMessage{
+	testMsg := TransportMessage{
 		Host: serverHost,
 		Msg:  *bytes.NewBufferString("Hello from client"),
 	}

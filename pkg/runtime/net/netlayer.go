@@ -3,29 +3,34 @@ package net
 import "bytes"
 
 type (
-	NetworkLayer interface {
-		Connect(host Host)
-		Disconnect(host Host)
-		Send(msg NetworkMessage)
-		OutChannel() chan NetworkMessage
-		OutChannelEvents() chan ConnEvents
-		Cancel()
+	NetworkLayer struct {
+		transport        TransportLayer // the transport layer used, could be TCP, UDP, QUIC.
+		serverMappings   map[Host]Host  // mapping of Client Addr to Server Addr.
+		outChannelEvents chan ConnEvents
+		outMessages      chan NetworkMessage
 	}
 
 	NetworkMessage struct {
-		Host Host
+		Host Host // server host of each peer instead of the client host that the transport layer receives
 		Msg  bytes.Buffer
 	}
-
-	ConnEvents int
 )
 
-func NewNetworkMessage(msg bytes.Buffer, host Host) NetworkMessage {
-	return NetworkMessage{Msg: msg, Host: host}
+func NewNetworkLayer(transport *TransportLayer) *NetworkLayer {
+	return nil
 }
 
-const (
-	ConnConnected ConnEvents = iota
-	ConnDisconnected
-	ConnFailed
-)
+func (n *NetworkLayer) networkHandler() { // TODO: Contexts and WaitGroups.
+	for {
+		select {
+		case event := <-n.transport.OutChannelEvents():
+			n.outChannelEvents <- event
+		case msg := <-n.transport.OutChannel():
+			n.processMessage(msg)
+		}
+	}
+}
+
+func (n *NetworkLayer) processMessage(msg TransportMessage) {
+
+}

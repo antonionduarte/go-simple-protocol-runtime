@@ -1,10 +1,9 @@
 package runtime
 
 import (
-	"sync"
-
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 	"golang.org/x/net/context"
+	"sync"
 )
 
 type (

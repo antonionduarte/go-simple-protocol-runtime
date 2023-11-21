@@ -10,7 +10,7 @@ import (
 type (
 	TCPLayer struct {
 		cancelFunc        func() // TODO: Should I do this? Is this idiomatic?
-		outChannel        chan NetworkMessage
+		outChannel        chan TransportMessage
 		outChannelEvents  chan ConnEvents
 		activeConnections map[Host]net.Conn
 		mutex             sync.Mutex // Mutex to protect concurrent access to activeConnections
@@ -22,7 +22,7 @@ type (
 // NewTCPLayer creates a new TCPLayer and starts the listener
 func NewTCPLayer(self Host) *TCPLayer {
 	tcpLayer := &TCPLayer{
-		outChannel:        make(chan NetworkMessage, 10),
+		outChannel:        make(chan TransportMessage, 10),
 		outChannelEvents:  make(chan ConnEvents, 1),
 		activeConnections: make(map[Host]net.Conn),
 	}
@@ -37,7 +37,7 @@ func (t *TCPLayer) Cancel() {
 }
 
 // Send sends a message to the specified host
-func (t *TCPLayer) Send(networkMessage NetworkMessage) {
+func (t *TCPLayer) Send(networkMessage TransportMessage) {
 	t.mutex.Lock()
 	conn, ok := t.activeConnections[networkMessage.Host]
 	t.mutex.Unlock()
@@ -93,7 +93,7 @@ func (t *TCPLayer) Disconnect(host Host) {
 }
 
 // OutChannel returns the channel for outgoing messages
-func (t *TCPLayer) OutChannel() chan NetworkMessage {
+func (t *TCPLayer) OutChannel() chan TransportMessage {
 	return t.outChannel
 }
 
@@ -157,7 +157,7 @@ func (t *TCPLayer) handleConnection(ctx context.Context, conn net.Conn, host Hos
 
 			var byteBuffer bytes.Buffer
 			byteBuffer.Write(message)
-			t.outChannel <- NetworkMessage{host, byteBuffer}
+			t.outChannel <- TransportMessage{host, byteBuffer}
 		}
 	}
 }

@@ -5,7 +5,7 @@ Simple protocol runtime in Go. (heavily inspired by [Babel](https://github.com/p
 ## TODO:
 
 - [X] Implement basic structure.
-- [X] Implement network layer, for TCP initially, if anyone wants UDP or QUIC they can add it themselves.
+- [ ] Implement network layer, for TCP initially. TODO: Had an error, I probably need to do a handshake.
 - [ ] Implement inter-protocol communication, so that we can send messages between protocols within same Runtime.
 - [ ] Implement a simple protocol, which can send and receive messages to test this.
 - [X] Implement timer functionality.
@@ -64,3 +64,21 @@ func handleOutConnectionFailed() {}
 - SetupTimer()
 - SetupPeriodicTimer()
 - CancelTimer()
+
+## New TCP Layer
+
+```
+
+
+
+
+```
+
+
+
+
+
+
+
+
+

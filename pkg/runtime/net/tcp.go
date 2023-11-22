@@ -14,8 +14,6 @@ type (
 		connectChan       chan Host // TODO: Maybe do a TransportHost and a NetworkHost?
 		activeConnections map[Host]net.Conn
 		mutex             sync.Mutex // Mutex to protect concurrent access to activeConnections
-		ctx               context.Context
-		cancel            context.CancelFunc
 		self              Host
 	}
 )
@@ -25,6 +23,7 @@ func NewTCPLayer(self Host, ctx context.Context) *TCPLayer {
 	tcpLayer := &TCPLayer{
 		outChannel:        make(chan TransportMessage, 10),
 		outChannelEvents:  make(chan ConnEvents, 1),
+		connectChan:       make(chan Host),
 		activeConnections: make(map[Host]net.Conn),
 	}
 	tcpLayer.listen(ctx) // Starting the listener in a goroutine

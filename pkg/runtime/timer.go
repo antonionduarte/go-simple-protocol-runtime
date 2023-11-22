@@ -44,7 +44,6 @@ func SetupPeriodicTimer(timer Timer, duration time.Duration) {
 
 		SetupPeriodicTimer(timer, duration)
 	})
-
 	runtime.timerMutex.Lock()
 	runtime.ongoingTimers[timer.TimerID()] = goTimer
 	runtime.timerMutex.Unlock()

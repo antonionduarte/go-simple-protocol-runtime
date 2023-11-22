@@ -21,7 +21,7 @@ type (
 		timerChannel   chan Timer
 		messageChannel chan Message
 		msgSerializers map[int]Serializer
-		msgHandlers    map[int]func(msg Message, from net.Host)
+		msgHandlers    map[int]func(msg Message)
 		timerHandlers  map[int]func(timer Timer)
 	}
 )
@@ -36,7 +36,7 @@ func NewProtoProtocol(protocol Protocol, self net.Host) *ProtoProtocol {
 		messageChannel: make(chan Message, 1),
 		timerChannel:   make(chan Timer, 1),
 
-		msgHandlers:   make(map[int]func(msg Message, from net.Host)),
+		msgHandlers:   make(map[int]func(msg Message)),
 		timerHandlers: make(map[int]func(timer Timer)),
 	}
 }

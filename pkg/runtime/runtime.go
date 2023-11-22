@@ -144,10 +144,11 @@ func (r *Runtime) setupLogger() {
 
 	mw := io.MultiWriter(os.Stdout, file)
 	log.SetOutput(mw)
-
-	log.Info("This is a log message")
+	log.Info("Logger initialized")
 }
 
+// TODO: This function could honestly have a better name.
+// processMessage would be better probably.
 // receiveMessage receives a message from the Network Layer.
 func receiveMessage(networkMessage net.TransportMessage) {
 	buffer := networkMessage.Msg

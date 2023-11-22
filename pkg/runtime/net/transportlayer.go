@@ -1,11 +1,14 @@
 package net
 
-import "bytes"
+import (
+	"bytes"
+	"strconv"
+)
 
 type (
 	TransportLayer interface {
-		Connect(host Host)
-		Disconnect(host Host)
+		Connect(host TransportHost)
+		Disconnect(host TransportHost)
 		Send(msg TransportMessage)
 		OutChannel() chan TransportMessage
 		OutChannelEvents() chan ConnEvents
@@ -13,15 +16,31 @@ type (
 	}
 
 	TransportMessage struct {
-		Host Host
+		Host TransportHost
 		Msg  bytes.Buffer
+	}
+
+	TransportHost struct {
+		Port int
+		IP   string
 	}
 
 	ConnEvents int
 )
 
-func NewTransportMessage(msg bytes.Buffer, host Host) TransportMessage {
+func NewTransportHost(port int, ip string) TransportHost {
+	return TransportHost{
+		Port: port,
+		IP:   ip,
+	}
+}
+
+func NewTransportMessage(msg bytes.Buffer, host TransportHost) TransportMessage {
 	return TransportMessage{Msg: msg, Host: host}
+}
+
+func (host *TransportHost) ToString() string {
+	return host.IP + ":" + strconv.Itoa(host.Port)
 }
 
 const (

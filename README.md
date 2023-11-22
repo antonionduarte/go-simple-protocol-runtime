@@ -11,8 +11,8 @@ Simple protocol runtime in Go. (heavily inspired by [Babel](https://github.com/p
 - [X] Implement timer functionality.
 - [ ] Implement configuration file parser.
 - [X] Add contexts **everywhere** in order to gracefully finish the runtime and it's experiments.
-- [ ] Decide how I actually want to manage the self Host.
-- [ ] I want message not to include the host that I received the message from, new message interface should be:
+- [X] Decide how I actually want to manage the self Host.
+- [ ] High Priority - Might break everything - Rethink if I save the Host in the Message Structs.
 - [ ] Decide correctly which static functions should be in which file, possibly ask GPT-4 about it his answer will be correct. 
 - [ ] Should the cancelation of the runtime be called at the runtime level or?
 - [ ] Should the network layer be generic by itself and abstract stuff like cancelation?
@@ -52,6 +52,22 @@ func handleInConnectionUp() {}
 func handleOutConnectionFailed() {}
 ```
 
+I think I want message handler format to be:
+
+```go
+package main
+
+// Receiving messages:
+
+func handleRandomMessage(msg Message, from Host)
+
+// And sending messages:
+// ... messages will propagate downwards, Runtime -> NetworkLayer -> TransportLayer
+func SendMessage(msg Message, to Host) // Runtime
+func Send(msg NetworkMessage, to Host) // NetworkLayer
+func Send(msg TransportMessage, to Host) // TransportLayer
+```
+
 ## Errors we could detect and log:
 
 - [ ] Net layer related errors.
@@ -64,21 +80,3 @@ func handleOutConnectionFailed() {}
 - SetupTimer()
 - SetupPeriodicTimer()
 - CancelTimer()
-
-## New TCP Layer
-
-```
-
-
-
-
-```
-
-
-
-
-
-
-
-
-

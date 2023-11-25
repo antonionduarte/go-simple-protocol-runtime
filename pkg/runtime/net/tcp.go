@@ -37,7 +37,7 @@ func NewTCPConnection(tcpConn net.Conn) *TCPConnection {
 func NewTCPLayer(self TransportHost, ctx context.Context) *TCPLayer {
 	tcpLayer := &TCPLayer{
 		outChannel:        make(chan TransportMessage, 10),
-		outChannelEvents:  make(chan TransportConnEvents, 10),
+		outChannelEvents:  make(chan TransportConnEvents),
 		connectChan:       make(chan TransportHost),
 		activeConnections: make(map[TransportHost]*TCPConnection),
 		self:              self,
@@ -74,7 +74,9 @@ func (t *TCPLayer) Disconnect(host TransportHost) {
 		if err != nil {
 			// TODO: Proper Logging
 		}
+		println("Does it block here 1?")
 		t.outChannelEvents <- TransportConnDisconnected
+		println("Does it block here 2?")
 	} else {
 		// TODO: Proper Logging
 	}

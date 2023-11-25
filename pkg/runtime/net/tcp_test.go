@@ -8,8 +8,8 @@ import (
 )
 
 func TestTCPLayerConnection(t *testing.T) {
-	first := NewTransportHost(6001, "127.0.0.1")
-	second := NewTransportHost(6002, "127.0.0.1")
+	first := NewTransportHost(6501, "127.0.0.1")
+	second := NewTransportHost(6502, "127.0.0.1")
 
 	firstCtx := context.Background()
 	secondCtx := context.Background()
@@ -25,8 +25,18 @@ func TestTCPLayerConnection(t *testing.T) {
 
 	firstNode.Connect(second)
 
-	<-firstNode.OutChannelEvents()
-	<-secondNode.OutChannelEvents()
+	connectCount := 0
+	for {
+		if connectCount == 2 {
+			break
+		}
+		select {
+		case _ = <-secondNode.OutChannelEvents():
+			connectCount++
+		case _ = <-firstNode.OutChannelEvents():
+			connectCount++
+		}
+	}
 
 	time.Sleep(1 * time.Second)
 
@@ -40,8 +50,8 @@ func TestTCPLayerConnection(t *testing.T) {
 }
 
 func TestTCPLayerSendMessage(t *testing.T) {
-	first := NewTransportHost(5001, "127.0.0.1")
-	second := NewTransportHost(5002, "127.0.0.1")
+	first := NewTransportHost(7501, "127.0.0.1")
+	second := NewTransportHost(7502, "127.0.0.1")
 
 	firstCtx := context.Background()
 	secondCtx := context.Background()
@@ -57,8 +67,18 @@ func TestTCPLayerSendMessage(t *testing.T) {
 
 	firstNode.Connect(second)
 
-	<-firstNode.outChannelEvents
-	<-secondNode.outChannelEvents
+	connectCount := 0
+	for {
+		if connectCount == 2 {
+			break
+		}
+		select {
+		case _ = <-secondNode.OutChannelEvents():
+			connectCount++
+		case _ = <-firstNode.OutChannelEvents():
+			connectCount++
+		}
+	}
 
 	time.Sleep(1 * time.Second)
 
@@ -86,8 +106,8 @@ func TestTCPLayerSendMessage(t *testing.T) {
 }
 
 func TestDisconnect(t *testing.T) {
-	first := NewTransportHost(7001, "127.0.0.1")
-	second := NewTransportHost(7002, "127.0.0.1")
+	first := NewTransportHost(6913, "127.0.0.1")
+	second := NewTransportHost(6912, "127.0.0.1")
 
 	firstCtx := context.Background()
 	secondCtx := context.Background()
@@ -103,15 +123,35 @@ func TestDisconnect(t *testing.T) {
 
 	firstNode.Connect(second)
 
-	_ = <-firstNode.OutChannelEvents()
-	_ = <-secondNode.OutChannelEvents()
+	connectCount := 0
+	for {
+		if connectCount == 2 {
+			break
+		}
+		select {
+		case _ = <-secondNode.OutChannelEvents():
+			connectCount++
+		case _ = <-firstNode.OutChannelEvents():
+			connectCount++
+		}
+	}
 
 	time.Sleep(1 * time.Second)
 
-	firstNode.Disconnect(second)
+	go firstNode.Disconnect(second)
 
-	_ = <-secondNode.OutChannelEvents()
-	_ = <-firstNode.OutChannelEvents()
+	disconnectCount := 0
+	for {
+		if disconnectCount == 2 {
+			break
+		}
+		select {
+		case _ = <-secondNode.OutChannelEvents():
+			disconnectCount++
+		case _ = <-firstNode.OutChannelEvents():
+			disconnectCount++
+		}
+	}
 
 	time.Sleep(1 * time.Second)
 

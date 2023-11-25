@@ -12,7 +12,7 @@ import (
 type (
 	TCPLayer struct {
 		outChannel        chan TransportMessage
-		outChannelEvents  chan ConnEvents
+		outChannelEvents  chan TransportConnEvents
 		connectChan       chan TransportHost // TODO: Maybe do a TransportHost and a NetworkHost?
 		activeConnections map[TransportHost]*TCPConnection
 		mutex             sync.Mutex // Mutex to protect concurrent access to activeConnections
@@ -21,7 +21,7 @@ type (
 
 	TCPConnection struct {
 		tcpConn   net.Conn
-		inChannel chan ConnEvents
+		inChannel chan TransportConnEvents
 	}
 )
 
@@ -29,7 +29,7 @@ type (
 func NewTCPConnection(tcpConn net.Conn) *TCPConnection {
 	return &TCPConnection{
 		tcpConn:   tcpConn,
-		inChannel: make(chan ConnEvents, 10),
+		inChannel: make(chan TransportConnEvents, 10),
 	}
 }
 
@@ -37,7 +37,7 @@ func NewTCPConnection(tcpConn net.Conn) *TCPConnection {
 func NewTCPLayer(self TransportHost, ctx context.Context) *TCPLayer {
 	tcpLayer := &TCPLayer{
 		outChannel:        make(chan TransportMessage, 10),
-		outChannelEvents:  make(chan ConnEvents, 1),
+		outChannelEvents:  make(chan TransportConnEvents, 1),
 		connectChan:       make(chan TransportHost),
 		activeConnections: make(map[TransportHost]*TCPConnection),
 		self:              self,
@@ -55,7 +55,7 @@ func (t *TCPLayer) Send(networkMessage TransportMessage, sendTo TransportHost) {
 	} else {
 		_, err := conn.tcpConn.Write(networkMessage.Msg.Bytes())
 		if err != nil {
-			t.outChannelEvents <- ConnFailed
+			t.outChannelEvents <- TransportConnFailed
 			t.Disconnect(networkMessage.Host) // TODO: Replace with sendTo Host
 		}
 	}
@@ -76,7 +76,7 @@ func (t *TCPLayer) Disconnect(host TransportHost) {
 		}
 		println("Does it get here? - 3")
 		println("Does it get here? - 2")
-		t.outChannelEvents <- ConnDisconnected
+		t.outChannelEvents <- TransportConnDisconnected
 	} else {
 		// TODO: Proper Logging
 	}
@@ -89,7 +89,7 @@ func (t *TCPLayer) OutChannel() chan TransportMessage {
 }
 
 // OutChannelEvents returns the channel for outgoing events
-func (t *TCPLayer) OutChannelEvents() chan ConnEvents {
+func (t *TCPLayer) OutChannelEvents() chan TransportConnEvents {
 	return t.outChannelEvents
 }
 
@@ -116,11 +116,11 @@ func (t *TCPLayer) connectHandler(ctx context.Context) {
 		case host := <-t.connectChan:
 			conn, err := net.Dial("tcp", host.ToString())
 			if err != nil {
-				t.outChannelEvents <- ConnFailed
+				t.outChannelEvents <- TransportConnFailed
 				return
 			}
 			tcpConnection := NewTCPConnection(conn)
-			t.outChannelEvents <- ConnConnected
+			t.outChannelEvents <- TransportConnConnected
 			t.addActiveConn(tcpConnection, host)
 			go t.connectionHandler(ctx, tcpConnection, host)
 		}
@@ -149,7 +149,7 @@ func (t *TCPLayer) listenerHandler(ctx context.Context, listener net.Listener) {
 			addr := conn.RemoteAddr().(*net.TCPAddr)
 			host := NewTransportHost(addr.Port, addr.IP.String())
 			tcpConnection := NewTCPConnection(conn)
-			t.outChannelEvents <- ConnConnected
+			t.outChannelEvents <- TransportConnConnected
 			t.addActiveConn(tcpConnection, host)
 			go t.connectionHandler(ctx, tcpConnection, host)
 		}

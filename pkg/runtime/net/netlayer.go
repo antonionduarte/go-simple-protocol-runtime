@@ -6,7 +6,7 @@ type (
 	NetworkLayer struct {
 		transport        TransportLayer // the transport layer used, could be TCP, UDP, QUIC.
 		serverMappings   map[Host]Host  // mapping of Client Addr to Server Addr.
-		outChannelEvents chan ConnEvents
+		outChannelEvents chan TransportConnEvents
 		outMessages      chan NetworkMessage
 	}
 

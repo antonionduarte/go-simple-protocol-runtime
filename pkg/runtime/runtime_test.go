@@ -53,8 +53,8 @@ func (m *MockNetworkLayer) OutChannel() chan net.TransportMessage {
 	return make(chan net.TransportMessage, 1)
 }
 
-func (m *MockNetworkLayer) OutChannelEvents() chan net.ConnEvents {
-	return make(chan net.ConnEvents, 1)
+func (m *MockNetworkLayer) OutChannelEvents() chan net.TransportConnEvents {
+	return make(chan net.TransportConnEvents, 1)
 }
 
 func (m *MockNetworkLayer) Cancel() {

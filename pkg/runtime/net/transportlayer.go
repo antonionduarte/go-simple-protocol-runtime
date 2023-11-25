@@ -11,7 +11,7 @@ type (
 		Disconnect(host TransportHost)
 		Send(msg TransportMessage)
 		OutChannel() chan TransportMessage
-		OutChannelEvents() chan ConnEvents
+		OutChannelEvents() chan TransportConnEvents
 		Cancel()
 	}
 
@@ -25,7 +25,7 @@ type (
 		IP   string
 	}
 
-	ConnEvents int
+	TransportConnEvents int
 )
 
 func NewTransportHost(port int, ip string) TransportHost {
@@ -44,7 +44,7 @@ func (host *TransportHost) ToString() string {
 }
 
 const (
-	ConnConnected ConnEvents = iota
-	ConnDisconnected
-	ConnFailed
+	TransportConnConnected TransportConnEvents = iota
+	TransportConnDisconnected
+	TransportConnFailed
 )

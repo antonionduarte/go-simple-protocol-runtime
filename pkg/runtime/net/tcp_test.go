@@ -4,12 +4,11 @@ import (
 	"bytes"
 	"context"
 	"testing"
-	"time"
 )
 
 func TestTCPLayerConnection(t *testing.T) {
-	first := NewTransportHost(6501, "127.0.0.1")
-	second := NewTransportHost(6502, "127.0.0.1")
+	first := NewTransportHost(6503, "127.0.0.1")
+	second := NewTransportHost(6504, "127.0.0.1")
 
 	firstCtx := context.Background()
 	secondCtx := context.Background()
@@ -37,8 +36,6 @@ func TestTCPLayerConnection(t *testing.T) {
 			connectCount++
 		}
 	}
-
-	time.Sleep(1 * time.Second)
 
 	if len(secondNode.activeConnections) != 1 {
 		t.Errorf("TCPConnection on secondNode should've been established.")
@@ -80,10 +77,8 @@ func TestTCPLayerSendMessage(t *testing.T) {
 		}
 	}
 
-	time.Sleep(1 * time.Second)
-
 	msg := NewTransportMessage(*bytes.NewBuffer([]byte("Test message")), firstNode.self)
-	firstNode.Send(msg, secondNode.self)
+	firstNode.send(msg, secondNode.self)
 
 	receivedMsg := <-secondNode.OutChannel()
 
@@ -97,7 +92,7 @@ func TestTCPLayerSendMessage(t *testing.T) {
 		break
 	}
 
-	secondNode.Send(msg, clientHost)
+	secondNode.send(msg, clientHost)
 
 	receivedMsg = <-firstNode.OutChannel()
 	if receivedMsg.Msg.String() != "Test message" {
@@ -136,9 +131,7 @@ func TestDisconnect(t *testing.T) {
 		}
 	}
 
-	time.Sleep(1 * time.Second)
-
-	go firstNode.Disconnect(second)
+	firstNode.Disconnect(second)
 
 	disconnectCount := 0
 	for {
@@ -152,8 +145,6 @@ func TestDisconnect(t *testing.T) {
 			disconnectCount++
 		}
 	}
-
-	time.Sleep(1 * time.Second)
 
 	if len(firstNode.activeConnections) != 0 {
 		t.Errorf("TCPConnection on firstNode should've been deleted.")

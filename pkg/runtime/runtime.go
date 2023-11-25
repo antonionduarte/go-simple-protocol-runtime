@@ -70,6 +70,7 @@ func (r *Runtime) Start() {
 	go r.eventHandler(ctx)
 }
 
+// StartWithDuration starts the runtime instance, and runs it until a specified amount of time has passed.
 func (r *Runtime) StartWithDuration(duration time.Duration) {
 	r.Start()
 	time.AfterFunc(duration, func() {
@@ -94,6 +95,8 @@ func (r *Runtime) RegisterNetworkLayer(networkLayer net.TransportLayer) {
 	r.networkLayer = networkLayer
 }
 
+// Cancel cancels the execution of the runtime instance an appropriately waits for all
+// goRoutines to gracefully finish execution.
 func (r *Runtime) Cancel() {
 	r.cancelFunc()          // this finishes execution of all the protocols
 	r.networkLayer.Cancel() // this finishes execution of the network layer
@@ -113,7 +116,7 @@ func (r *Runtime) eventHandler(ctx context.Context) {
 			protocol := r.protocols[timer.ProtocolID()]
 			protocol.TimerChannel() <- timer
 		case networkMessage := <-r.networkLayer.OutChannel():
-			receiveMessage(networkMessage)
+			processMessage(networkMessage)
 		}
 	}
 }
@@ -147,10 +150,8 @@ func (r *Runtime) setupLogger() {
 	log.Info("Logger initialized")
 }
 
-// TODO: This function could honestly have a better name.
-// processMessage would be better probably.
-// receiveMessage receives a message from the Network Layer.
-func receiveMessage(networkMessage net.TransportMessage) {
+// processMessage receives a message from the Network Layer.
+func processMessage(networkMessage net.TransportMessage) {
 	buffer := networkMessage.Msg
 
 	var protocolID, messageID uint16

@@ -57,6 +57,9 @@ func TestTCPLayerSendMessage(t *testing.T) {
 
 	firstNode.Connect(second)
 
+	<-firstNode.outChannelEvents
+	<-secondNode.outChannelEvents
+
 	time.Sleep(1 * time.Second)
 
 	msg := NewTransportMessage(*bytes.NewBuffer([]byte("Test message")), firstNode.self)
@@ -107,8 +110,8 @@ func TestDisconnect(t *testing.T) {
 
 	firstNode.Disconnect(second)
 
-	_ = <-firstNode.OutChannelEvents()
 	_ = <-secondNode.OutChannelEvents()
+	_ = <-firstNode.OutChannelEvents()
 
 	time.Sleep(1 * time.Second)
 

@@ -13,7 +13,7 @@ type (
 	TCPLayer struct {
 		outChannel        chan TransportMessage
 		outChannelEvents  chan TransportConnEvents
-		connectChan       chan TransportHost // TODO: Maybe do a TransportHost and a NetworkHost?
+		connectChan       chan TransportHost
 		activeConnections map[TransportHost]*TCPConnection
 		mutex             sync.Mutex // Mutex to protect concurrent access to activeConnections
 		self              TransportHost
@@ -37,7 +37,7 @@ func NewTCPConnection(tcpConn net.Conn) *TCPConnection {
 func NewTCPLayer(self TransportHost, ctx context.Context) *TCPLayer {
 	tcpLayer := &TCPLayer{
 		outChannel:        make(chan TransportMessage, 10),
-		outChannelEvents:  make(chan TransportConnEvents, 1),
+		outChannelEvents:  make(chan TransportConnEvents, 10),
 		connectChan:       make(chan TransportHost),
 		activeConnections: make(map[TransportHost]*TCPConnection),
 		self:              self,
@@ -74,13 +74,10 @@ func (t *TCPLayer) Disconnect(host TransportHost) {
 		if err != nil {
 			// TODO: Proper Logging
 		}
-		println("Does it get here? - 3")
-		println("Does it get here? - 2")
 		t.outChannelEvents <- TransportConnDisconnected
 	} else {
 		// TODO: Proper Logging
 	}
-	println("Is this doing this?")
 }
 
 // OutChannel returns the channel for outgoing messages
@@ -160,16 +157,12 @@ func (t *TCPLayer) listenerHandler(ctx context.Context, listener net.Listener) {
 func (t *TCPLayer) connectionHandler(ctx context.Context, conn *TCPConnection, host TransportHost) {
 	for {
 		select {
-		case <-conn.inChannel:
-			println("Is this ever called? conn.InChannel")
-			return // TODO: Proper logging
 		case <-ctx.Done():
 			return // TODO: Proper logging
 		default:
 			err := t.receiveMessage(conn.tcpConn, host)
 			if err != nil {
-				println("Should disconnect cuz no msg received.")
-				t.Disconnect(host) // TODO: This might be an issue, and is causing a SEGFAULT.
+				t.Disconnect(host)
 				return
 			}
 		}
@@ -183,7 +176,6 @@ func (t *TCPLayer) receiveMessage(conn net.Conn, host TransportHost) error {
 	// Set a read deadline for non-blocking read
 	err := conn.SetReadDeadline(time.Now().Add(time.Second * 1))
 	if err != nil {
-		// Handle error setting deadline
 		return err // Indicates an error occurred
 	}
 
@@ -221,7 +213,6 @@ func (t *TCPLayer) removeActiveConn(host TransportHost) (*TCPConnection, bool) {
 		delete(t.activeConnections, host)
 		return conn, true
 	} else {
-		println("This should be happening somewhere over here")
 		return nil, false
 	}
 }

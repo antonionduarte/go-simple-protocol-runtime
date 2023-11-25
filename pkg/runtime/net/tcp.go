@@ -3,8 +3,10 @@ package net
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net"
 	"sync"
+	"time"
 )
 
 type (
@@ -12,19 +14,33 @@ type (
 		outChannel        chan TransportMessage
 		outChannelEvents  chan ConnEvents
 		connectChan       chan TransportHost // TODO: Maybe do a TransportHost and a NetworkHost?
-		activeConnections map[TransportHost]net.Conn
+		activeConnections map[TransportHost]*TCPConnection
 		mutex             sync.Mutex // Mutex to protect concurrent access to activeConnections
-		self              Host
+		self              TransportHost
+	}
+
+	TCPConnection struct {
+		tcpConn   net.Conn
+		inChannel chan ConnEvents
 	}
 )
 
+// NewTCPConnection creates a new TCPConnection
+func NewTCPConnection(tcpConn net.Conn) *TCPConnection {
+	return &TCPConnection{
+		tcpConn:   tcpConn,
+		inChannel: make(chan ConnEvents, 10),
+	}
+}
+
 // NewTCPLayer creates a new TCPLayer and starts the listener
-func NewTCPLayer(self Host, ctx context.Context) *TCPLayer {
+func NewTCPLayer(self TransportHost, ctx context.Context) *TCPLayer {
 	tcpLayer := &TCPLayer{
 		outChannel:        make(chan TransportMessage, 10),
 		outChannelEvents:  make(chan ConnEvents, 1),
 		connectChan:       make(chan TransportHost),
-		activeConnections: make(map[TransportHost]net.Conn),
+		activeConnections: make(map[TransportHost]*TCPConnection),
+		self:              self,
 	}
 	tcpLayer.listen(ctx) // Starting the listener in a goroutine
 	return tcpLayer
@@ -37,7 +53,7 @@ func (t *TCPLayer) Send(networkMessage TransportMessage, sendTo TransportHost) {
 		// TODO: Properly log this, trying to send message to non active connection! (propagate error? or just log?)
 		return
 	} else {
-		_, err := conn.Write(networkMessage.Msg.Bytes())
+		_, err := conn.tcpConn.Write(networkMessage.Msg.Bytes())
 		if err != nil {
 			t.outChannelEvents <- ConnFailed
 			t.Disconnect(networkMessage.Host) // TODO: Replace with sendTo Host
@@ -52,8 +68,19 @@ func (t *TCPLayer) Connect(host TransportHost) {
 
 // Disconnect disconnects from the specified host
 func (t *TCPLayer) Disconnect(host TransportHost) {
-	t.removeActiveConn(host)
-	t.outChannelEvents <- ConnDisconnected
+	conn, ok := t.removeActiveConn(host)
+	if ok {
+		err := conn.tcpConn.Close()
+		if err != nil {
+			// TODO: Proper Logging
+		}
+		println("Does it get here? - 3")
+		println("Does it get here? - 2")
+		t.outChannelEvents <- ConnDisconnected
+	} else {
+		// TODO: Proper Logging
+	}
+	println("Is this doing this?")
 }
 
 // OutChannel returns the channel for outgoing messages
@@ -73,7 +100,7 @@ func (t *TCPLayer) OutChannelEvents() chan ConnEvents {
 func (t *TCPLayer) listen(ctx context.Context) {
 	listener, err := net.Listen("tcp", t.self.ToString())
 	if err != nil {
-		// TODO: Propper logging of err
+		// TODO: Proper logging of err
 		return
 	}
 	go t.connectHandler(ctx)
@@ -81,7 +108,7 @@ func (t *TCPLayer) listen(ctx context.Context) {
 }
 
 // connectHandler handles requests from the upward layers for new Connections.
-// actually this was just made like this so I can pass it the ctx.Context
+// actually this was just made like this, so I can pass it the ctx.Context
 // in a functional manner.
 func (t *TCPLayer) connectHandler(ctx context.Context) {
 	for {
@@ -92,9 +119,10 @@ func (t *TCPLayer) connectHandler(ctx context.Context) {
 				t.outChannelEvents <- ConnFailed
 				return
 			}
+			tcpConnection := NewTCPConnection(conn)
 			t.outChannelEvents <- ConnConnected
-			t.addActiveConn(conn, host)
-			go t.connectionHandler(ctx, conn, host)
+			t.addActiveConn(tcpConnection, host)
+			go t.connectionHandler(ctx, tcpConnection, host)
 		}
 	}
 }
@@ -107,47 +135,77 @@ func (t *TCPLayer) listenerHandler(ctx context.Context, listener net.Listener) {
 	for {
 		select {
 		case <-ctx.Done():
+			err := listener.Close()
+			if err != nil {
+				// TODO: Proper logging
+			}
 			return
 		default:
 			conn, err := listener.Accept()
 			if err != nil {
-				// TODO: Propper logging
+				// TODO: Proper logging
 				continue // doesn't launch the connection handler
 			}
 			addr := conn.RemoteAddr().(*net.TCPAddr)
 			host := NewTransportHost(addr.Port, addr.IP.String())
-			go t.connectionHandler(ctx, conn, host)
+			tcpConnection := NewTCPConnection(conn)
+			t.outChannelEvents <- ConnConnected
+			t.addActiveConn(tcpConnection, host)
+			go t.connectionHandler(ctx, tcpConnection, host)
 		}
 	}
 }
 
 // handleConnection handles a single tcp connection
-// TODO: Super problematic, we *never* close this even when a connection dies!
-func (t *TCPLayer) connectionHandler(ctx context.Context, conn net.Conn, host TransportHost) {
+func (t *TCPLayer) connectionHandler(ctx context.Context, conn *TCPConnection, host TransportHost) {
 	for {
 		select {
+		case <-conn.inChannel:
+			println("Is this ever called? conn.InChannel")
+			return // TODO: Proper logging
 		case <-ctx.Done():
-			return // TODO - propper logging?;
+			return // TODO: Proper logging
 		default:
-			t.receiveMessage(conn, host)
+			err := t.receiveMessage(conn.tcpConn, host)
+			if err != nil {
+				println("Should disconnect cuz no msg received.")
+				t.Disconnect(host) // TODO: This might be an issue, and is causing a SEGFAULT.
+				return
+			}
 		}
 	}
 }
 
 // receiveMessage receives and processes a message and delivers it upwards
-func (t *TCPLayer) receiveMessage(conn net.Conn, host TransportHost) {
+func (t *TCPLayer) receiveMessage(conn net.Conn, host TransportHost) error {
 	buf := make([]byte, 4096)
+
+	// Set a read deadline for non-blocking read
+	err := conn.SetReadDeadline(time.Now().Add(time.Second * 1))
+	if err != nil {
+		// Handle error setting deadline
+		return err // Indicates an error occurred
+	}
+
 	numberBytes, err := conn.Read(buf)
 	if err != nil {
-		t.Disconnect(host)
-		return
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			// It's a timeout, not a disconnection; return false to indicate no fatal error occurred
+			return nil
+		}
+		// For other errors, handle disconnection
+		return err // Indicates a disconnection or fatal error occurred
 	}
+
+	// Process the received message
 	t.outChannel <- TransportMessage{host, *bytes.NewBuffer(buf[:numberBytes])}
+	return nil // No error occurred
 }
 
 // addActiveConn adds the active connection for the specified Host
 // this function may be used simultaneously by several go routines.
-func (t *TCPLayer) addActiveConn(conn net.Conn, host TransportHost) {
+func (t *TCPLayer) addActiveConn(conn *TCPConnection, host TransportHost) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	t.activeConnections[host] = conn
@@ -155,24 +213,24 @@ func (t *TCPLayer) addActiveConn(conn net.Conn, host TransportHost) {
 
 // removeActiveConn removes the active connection of the specified Host, if it exists
 // this function may be used simultaneously by several go routines.
-func (t *TCPLayer) removeActiveConn(host TransportHost) {
+func (t *TCPLayer) removeActiveConn(host TransportHost) (*TCPConnection, bool) {
 	t.mutex.Lock()
+	defer t.mutex.Unlock()
 	conn, ok := t.activeConnections[host]
 	if ok {
 		delete(t.activeConnections, host)
-		err := conn.Close()
-		if err != nil {
-			// TODO: propper logging
-		}
+		return conn, true
+	} else {
+		println("This should be happening somewhere over here")
+		return nil, false
 	}
-	t.mutex.Unlock()
 }
 
 // getActiveConn returns the active connection, and a bool indicating if it exists, for the specified Host
 // this function may be used simultaneously by several go routines.
-func (t *TCPLayer) getActiveConn(host TransportHost) (net.Conn, bool) {
+func (t *TCPLayer) getActiveConn(host TransportHost) (*TCPConnection, bool) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
-	conn, bool := t.activeConnections[host]
-	return conn, bool
+	conn, ok := t.activeConnections[host]
+	return conn, ok
 }

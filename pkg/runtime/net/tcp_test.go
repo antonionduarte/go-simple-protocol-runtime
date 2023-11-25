@@ -2,113 +2,121 @@ package net
 
 import (
 	"bytes"
+	"context"
 	"testing"
 	"time"
 )
 
 func TestTCPLayerConnection(t *testing.T) {
-	// Start a server on a random port
-	serverHost := NewHost(6501, "127.0.0.1")
-	serverLayer := NewTCPLayer(serverHost)
+	first := NewTransportHost(6001, "127.0.0.1")
+	second := NewTransportHost(6002, "127.0.0.1")
 
-	// Start the server in a separate goroutine
-	go func() {
-		serverLayer.start(serverHost)
-	}()
+	firstCtx := context.Background()
+	secondCtx := context.Background()
 
-	// Allow some time for the server to start
-	time.Sleep(time.Second)
+	firstCtx, firstCancel := context.WithCancel(firstCtx)
+	secondCtx, secondCancel := context.WithCancel(secondCtx)
 
-	// Now set up the client to connect to the server
-	clientHost := NewHost(6502, "127.0.0.1")
-	clientLayer := NewTCPLayer(clientHost)
+	defer firstCancel()
+	defer secondCancel()
 
-	// Attempt to connect the client to the server
-	clientLayer.Connect(serverHost)
+	firstNode := NewTCPLayer(first, firstCtx)
+	secondNode := NewTCPLayer(second, secondCtx)
 
-	clientLayer.Cancel()
-	serverLayer.Cancel()
+	firstNode.Connect(second)
+
+	<-firstNode.OutChannelEvents()
+	<-secondNode.OutChannelEvents()
+
+	time.Sleep(1 * time.Second)
+
+	if len(secondNode.activeConnections) != 1 {
+		t.Errorf("TCPConnection on secondNode should've been established.")
+	}
+
+	if len(firstNode.activeConnections) != 1 {
+		t.Errorf("TCPConnection on firstNode should've been established.")
+	}
 }
 
 func TestTCPLayerSendMessage(t *testing.T) {
-	// Start a server on a random port
-	serverHost := NewHost(6501, "127.0.0.1")
-	serverLayer := NewTCPLayer(serverHost)
+	first := NewTransportHost(5001, "127.0.0.1")
+	second := NewTransportHost(5002, "127.0.0.1")
 
-	// Start the server in a separate goroutine
-	go func() {
-		serverLayer.start(serverHost)
-	}()
+	firstCtx := context.Background()
+	secondCtx := context.Background()
 
-	// Allow some time for the server to start
-	time.Sleep(time.Second)
+	firstCtx, firstCancel := context.WithCancel(firstCtx)
+	secondCtx, secondCancel := context.WithCancel(secondCtx)
 
-	// Now set up the client to connect to the server
-	clientHost := NewHost(6502, "127.0.0.1")
-	clientLayer := NewTCPLayer(clientHost)
+	defer firstCancel()
+	defer secondCancel()
 
-	// Attempt to connect the client to the server
-	clientLayer.Connect(serverHost) // TODO: The connect is failing
+	firstNode := NewTCPLayer(first, firstCtx)
+	secondNode := NewTCPLayer(second, secondCtx)
 
-	// Test sending a message from client to server
-	testMsg := TransportMessage{
-		Host: serverHost,
-		Msg:  *bytes.NewBufferString("Hello from client"),
+	firstNode.Connect(second)
+
+	time.Sleep(1 * time.Second)
+
+	msg := NewTransportMessage(*bytes.NewBuffer([]byte("Test message")), firstNode.self)
+	firstNode.Send(msg, secondNode.self)
+
+	receivedMsg := <-secondNode.OutChannel()
+
+	if receivedMsg.Msg.String() != "Test message" {
+		t.Errorf("SecondNode received incorrect message.")
 	}
 
-	clientLayer.Send(testMsg)
-
-	// Allow some time for the message to be processed
-	time.Sleep(time.Second)
-
-	receivedMsg := <-serverLayer.outChannel
-
-	if receivedMsg.Msg.String() != "Hello from client" {
-		t.Errorf("Received message is incorrect")
+	var clientHost TransportHost
+	for key := range secondNode.activeConnections {
+		clientHost = key
+		break
 	}
 
-	// Cleanup: Close connections and layers
-	clientLayer.Cancel()
-	serverLayer.Cancel()
+	secondNode.Send(msg, clientHost)
+
+	receivedMsg = <-firstNode.OutChannel()
+	if receivedMsg.Msg.String() != "Test message" {
+		t.Errorf("FirstNode received incorrect message.")
+	}
 }
 
 func TestDisconnect(t *testing.T) {
-	// Start the server
-	serverHost := NewHost(6502, "127.0.0.1") // Using a specific port for the server
-	serverLayer := NewTCPLayer(serverHost)
+	first := NewTransportHost(7001, "127.0.0.1")
+	second := NewTransportHost(7002, "127.0.0.1")
 
-	go func() {
-		serverLayer.start(serverHost)
-	}()
+	firstCtx := context.Background()
+	secondCtx := context.Background()
 
-	// Give some time for the server to start
-	time.Sleep(time.Second)
+	firstCtx, firstCancel := context.WithCancel(firstCtx)
+	secondCtx, secondCancel := context.WithCancel(secondCtx)
 
-	// Start the client and connect to the server
-	clientHost := NewHost(6503, "127.0.0.1") // Using a specific port for the client
-	clientLayer := NewTCPLayer(clientHost)
-	clientLayer.Connect(serverHost)
+	defer firstCancel()
+	defer secondCancel()
 
-	// Give some time for the connection to be established
-	time.Sleep(time.Second)
+	firstNode := NewTCPLayer(first, firstCtx)
+	secondNode := NewTCPLayer(second, secondCtx)
 
-	// Check that the server has the client in its active connections
-	if _, ok := serverLayer.activeConnections[clientHost]; !ok {
-		t.Errorf("Client should be in server's active connections")
+	firstNode.Connect(second)
+
+	_ = <-firstNode.OutChannelEvents()
+	_ = <-secondNode.OutChannelEvents()
+
+	time.Sleep(1 * time.Second)
+
+	firstNode.Disconnect(second)
+
+	_ = <-firstNode.OutChannelEvents()
+	_ = <-secondNode.OutChannelEvents()
+
+	time.Sleep(1 * time.Second)
+
+	if len(firstNode.activeConnections) != 0 {
+		t.Errorf("TCPConnection on firstNode should've been deleted.")
 	}
 
-	// Now disconnect the client
-	clientLayer.Disconnect(serverHost)
-
-	// Give some time for the disconnect to be processed
-	time.Sleep(time.Second)
-
-	// Check that the client is no longer in the server's active connections
-	if _, ok := serverLayer.activeConnections[clientHost]; ok {
-		t.Errorf("Client should not be in server's active connections after disconnect")
+	if len(secondNode.activeConnections) != 0 {
+		t.Errorf("TCPConnection on secondNode should've been deleted.")
 	}
-
-	// Cleanup
-	clientLayer.Cancel()
-	serverLayer.Cancel()
 }

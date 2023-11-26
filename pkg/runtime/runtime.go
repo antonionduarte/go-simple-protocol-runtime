@@ -41,18 +41,6 @@ func GetRuntimeInstance() *Runtime {
 	return instance
 }
 
-// RegisterMessageHandler registers a message handler to the instance.
-func RegisterMessageHandler(protocolID int, messageID int, handler func(Message)) {
-	runtime := GetRuntimeInstance()
-	runtime.protocols[protocolID].RegisterMessageHandler(messageID, handler)
-}
-
-// RegisterMessageSerializer registers a message serializer to the instance.
-func RegisterMessageSerializer(protocolID int, messageID int, serializer Serializer) {
-	runtime := GetRuntimeInstance()
-	runtime.protocols[protocolID].RegisterMessageSerializer(messageID, serializer)
-}
-
 // Start starts the instance, and runs the start and init function for all the protocols.
 func (r *Runtime) Start() {
 	if r.networkLayer == nil {
@@ -78,9 +66,22 @@ func (r *Runtime) StartWithDuration(duration time.Duration) {
 	})
 }
 
-// GetProtocol returns a protocol from the instance.
-func (r *Runtime) GetProtocol(protocolID int) *ProtoProtocol {
-	return r.protocols[protocolID]
+// RegisterNetworkLayer registers the network layer that this runtime will use.
+// It takes in the TransportLayer that you're going to use. e.g. (pkg/runtime/net/tcp.go)
+func (r *Runtime) RegisterNetworkLayer(networkLayer net.TransportLayer) {
+	r.networkLayer = networkLayer
+}
+
+// RegisterMessageHandler registers a message handler to the instance.
+func RegisterMessageHandler(protocolID int, messageID int, handler func(Message)) {
+	runtime := GetRuntimeInstance()
+	runtime.protocols[protocolID].RegisterMessageHandler(messageID, handler)
+}
+
+// RegisterMessageSerializer registers a message serializer to the instance.
+func RegisterMessageSerializer(protocolID int, messageID int, serializer Serializer) {
+	runtime := GetRuntimeInstance()
+	runtime.protocols[protocolID].RegisterMessageSerializer(messageID, serializer)
 }
 
 // RegisterProtocol registers a protocol to the instance.
@@ -89,10 +90,9 @@ func (r *Runtime) RegisterProtocol(protocol *ProtoProtocol) {
 	r.protocols[protocol.ProtocolID()] = protocol
 }
 
-// RegisterNetworkLayer registers the network layer that this runtime will use.
-// It takes in the TransportLayer that you're going to use. e.g. (pkg/runtime/net/tcp.go)
-func (r *Runtime) RegisterNetworkLayer(networkLayer net.TransportLayer) {
-	r.networkLayer = networkLayer
+// GetProtocol returns a protocol from the instance.
+func (r *Runtime) GetProtocol(protocolID int) *ProtoProtocol {
+	return r.protocols[protocolID]
 }
 
 // Cancel cancels the execution of the runtime instance an appropriately waits for all
@@ -103,6 +103,7 @@ func (r *Runtime) Cancel() {
 	r.wg.Wait()
 }
 
+// eventHandler of the runtime.
 func (r *Runtime) eventHandler(ctx context.Context) {
 	defer r.wg.Done()
 	for {
@@ -121,18 +122,22 @@ func (r *Runtime) eventHandler(ctx context.Context) {
 	}
 }
 
+// startProtocols runs the start function of the protocols.
 func (r *Runtime) startProtocols(ctx context.Context) {
 	for _, protocol := range r.protocols {
 		protocol.Start(ctx, &r.wg)
 	}
 }
 
+// initProtocols runs the initialize function of the protocols.
 func (r *Runtime) initProtocols() {
 	for _, protocol := range r.protocols {
 		protocol.Init()
 	}
 }
 
+// TODO: Should probably be called from within an init function
+// setupLogger configures a logrus logger.
 func (r *Runtime) setupLogger() {
 	currentDate := time.Now().Format("2006-01-02")
 	fileName := currentDate + ".log"

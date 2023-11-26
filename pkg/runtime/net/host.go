@@ -20,13 +20,13 @@ func NewHost(port int, ip string) Host {
 	}
 }
 
-func SerializeHost(host Host) (bytes.Buffer, error) {
+func SerializeHost(host Host) bytes.Buffer {
 	var buffer bytes.Buffer
 
 	// Validate that the provided IP is a valid IPv4 address
 	ip := net.ParseIP(host.IP)
 	if ip == nil || ip.To4() == nil {
-		return buffer, fmt.Errorf("invalid IPv4 address: %s", host.IP)
+		return buffer
 	}
 
 	// Serialize the IP address as a fixed-length string of 15 bytes.
@@ -37,10 +37,10 @@ func SerializeHost(host Host) (bytes.Buffer, error) {
 	binary.LittleEndian.PutUint16(portBytes, uint16(host.Port))
 	buffer.Write(portBytes)
 
-	return buffer, nil
+	return buffer
 }
 
-func DeserializeHost(buffer bytes.Buffer) (Host, error) {
+func DeserializeHost(buffer bytes.Buffer) Host {
 	host := Host{}
 
 	// Read the IP address as a fixed-length string of 15 bytes.
@@ -51,11 +51,11 @@ func DeserializeHost(buffer bytes.Buffer) (Host, error) {
 	portBytes := make([]byte, 2)
 	_, err := buffer.Read(portBytes)
 	if err != nil {
-		return host, err
+		return host
 	}
 	host.Port = int(binary.LittleEndian.Uint16(portBytes))
 
-	return host, nil
+	return host
 }
 
 func CompareHost(host1, host2 Host) bool {

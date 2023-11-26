@@ -28,16 +28,13 @@ type (
 
 func NewProtoProtocol(protocol Protocol, self net.Host) *ProtoProtocol {
 	return &ProtoProtocol{
-		protocol: protocol,
-		self:     self,
-
+		protocol:       protocol,
+		self:           self,
 		msgSerializers: make(map[int]Serializer),
-
 		messageChannel: make(chan Message, 1),
 		timerChannel:   make(chan Timer, 1),
-
-		msgHandlers:   make(map[int]func(msg Message)),
-		timerHandlers: make(map[int]func(timer Timer)),
+		msgHandlers:    make(map[int]func(msg Message)),
+		timerHandlers:  make(map[int]func(timer Timer)),
 	}
 }
 

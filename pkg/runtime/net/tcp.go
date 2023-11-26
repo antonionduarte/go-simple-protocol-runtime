@@ -15,7 +15,7 @@ type (
 		connectChan       chan TransportHost
 		disconnectChan    chan TransportHost
 		outChannel        chan TransportMessage
-		outChannelEvents  chan TransportConnEvents
+		outChannelEvents  chan TransportEvent
 		activeConnections map[TransportHost]net.Conn
 		mutex             sync.Mutex // Mutex to protect concurrent access to activeConnections
 		self              TransportHost
@@ -31,7 +31,7 @@ type (
 func NewTCPLayer(self TransportHost, ctx context.Context) *TCPLayer {
 	tcpLayer := &TCPLayer{
 		outChannel:        make(chan TransportMessage, 10),
-		outChannelEvents:  make(chan TransportConnEvents),
+		outChannelEvents:  make(chan TransportEvent),
 		activeConnections: make(map[TransportHost]net.Conn),
 		sendChan:          make(chan TCPSendMessage),
 		connectChan:       make(chan TransportHost),
@@ -63,8 +63,8 @@ func (t *TCPLayer) OutChannel() chan TransportMessage {
 	return t.outChannel
 }
 
-// OutChannelEvents returns the channel for outgoing events
-func (t *TCPLayer) OutChannelEvents() chan TransportConnEvents {
+// OutTransportEvents returns the channel for outgoing events
+func (t *TCPLayer) OutTransportEvents() chan TransportEvent {
 	return t.outChannelEvents
 }
 
@@ -77,7 +77,7 @@ func (t *TCPLayer) send(networkMessage TransportMessage, sendTo TransportHost) {
 	} else {
 		_, err := conn.Write(networkMessage.Msg.Bytes())
 		if err != nil {
-			t.outChannelEvents <- TransportConnFailed
+			t.outChannelEvents <- &TransportFailed{sendTo}
 			t.Disconnect(networkMessage.Host) // TODO: Replace with sendTo Host
 		}
 	}
@@ -91,7 +91,7 @@ func (t *TCPLayer) disconnect(host TransportHost) {
 		if err != nil {
 			// TODO: Proper Logging
 		}
-		t.outChannelEvents <- TransportConnDisconnected
+		t.outChannelEvents <- &TransportDisconnected{host}
 	} else {
 		// TODO: Proper Logging
 	}
@@ -103,10 +103,10 @@ func (t *TCPLayer) disconnect(host TransportHost) {
 func (t *TCPLayer) connect(host TransportHost, ctx context.Context) {
 	conn, err := net.Dial("tcp", host.ToString())
 	if err != nil {
-		t.outChannelEvents <- TransportConnFailed
+		t.outChannelEvents <- &TransportFailed{host}
 		return
 	}
-	t.outChannelEvents <- TransportConnConnected
+	t.outChannelEvents <- &TransportConnected{host}
 	t.addActiveConn(conn, host)
 	go t.connectionHandler(ctx, conn, host)
 }
@@ -160,7 +160,7 @@ func (t *TCPLayer) listenerHandler(ctx context.Context, listener net.Listener) {
 				continue // doesn't launch the connection handler
 			}
 			host := NewTransportHost(conn.RemoteAddr().(*net.TCPAddr).Port, conn.RemoteAddr().(*net.TCPAddr).IP.String())
-			t.outChannelEvents <- TransportConnConnected
+			t.outChannelEvents <- &TransportConnected{host}
 			t.addActiveConn(conn, host)
 			go t.connectionHandler(ctx, conn, host)
 		}

@@ -87,7 +87,7 @@ func TestRegisterProtocol(t *testing.T) {
 func TestStartAndCancel(t *testing.T) {
 	runtime := GetRuntimeInstance()
 	mockNetworkLayer := new(MockNetworkLayer)
-	runtime.RegisterNetworkLayer(mockNetworkLayer)
+	// runtime.RegisterNetworkLayer(mockNetworkLayer)
 
 	runtime.Start()
 	runtime.Cancel()

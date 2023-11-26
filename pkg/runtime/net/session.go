@@ -3,24 +3,32 @@ package net
 import "bytes"
 
 type (
-	NetworkLayer struct {
+	SessionLayer struct {
 		transport        TransportLayer // the transport layer used, could be TCP, UDP, QUIC.
 		serverMappings   map[Host]Host  // mapping of Client Addr to Server Addr.
 		outChannelEvents chan TransportConnEvents
-		outMessages      chan NetworkMessage
+		outMessages      chan SessionMessage
 	}
 
-	NetworkMessage struct {
+	SessionMessage struct {
 		Host Host // server host of each peer instead of the client host that the transport layer receives
 		Msg  bytes.Buffer
 	}
+
+	ConnEvents int
 )
 
-func NewNetworkLayer(transport *TransportLayer) *NetworkLayer {
+const (
+	ConnConnected ConnEvents = iota
+	ConnDisconnected
+	ConnFailed
+)
+
+func NewNetworkLayer(transport *TransportLayer) *SessionLayer {
 	return nil
 }
 
-func (n *NetworkLayer) networkHandler() { // TODO: Contexts and WaitGroups.
+func (n *SessionLayer) sessionHandler() { // TODO: Contexts and WaitGroups.
 	for {
 		select {
 		case event := <-n.transport.OutChannelEvents():
@@ -31,6 +39,6 @@ func (n *NetworkLayer) networkHandler() { // TODO: Contexts and WaitGroups.
 	}
 }
 
-func (n *NetworkLayer) processMessage(msg TransportMessage) {
+func (n *SessionLayer) processMessage(msg TransportMessage) {
 
 }

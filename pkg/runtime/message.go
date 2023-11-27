@@ -34,7 +34,7 @@ func SendMessage(msg Message, sendTo net.Host) {
 	buffer := new(bytes.Buffer)
 
 	// Serialize the sender's Host
-	senderHostBuffer, _ := net.SerializeHost(msg.Sender())
+	senderHostBuffer := net.SerializeHost(msg.Sender())
 	buffer.Write(senderHostBuffer.Bytes())
 
 	// Serialize ProtoID and MessageID

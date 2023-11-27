@@ -43,7 +43,7 @@ func NewTCPLayer(self TransportHost, ctx context.Context) *TCPLayer {
 	return tcpLayer
 }
 
-// Send sends msg to the specified host
+// Send sends sessionMsg to the specified host
 func (t *TCPLayer) Send(msg TransportMessage, sendTo TransportHost) {
 	t.sendChan <- TCPSendMessage{sendTo, msg}
 }

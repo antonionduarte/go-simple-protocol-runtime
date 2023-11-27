@@ -80,3 +80,21 @@ func Send(msg TransportMessage, to Host) // TransportLayer
 - SetupTimer()
 - SetupPeriodicTimer()
 - CancelTimer()
+
+## Serialized Format of Messages
+
+The serialized format of messages sent in the system is going to be:  
+```
+LayerID || ProtocolID || MessageID || Contents  
+
+LayerID -> Distinguish between application level messages or Session level messages.
+    - ID: 1 - Application Level:    User defined messages.
+    - ID: 2 - Session Level:        Messages used to establish session, 
+                                    i.e. the ones used for the handshake protocol.
+                                    
+ProtocolID ->   Used to distribute messages to the correct ProtoProtocol,
+                which should be registered in the Runtime.
+
+MessageID ->    Used to distribute messages to the correct MessageHandler of the
+                Protocol. Which should be registered in the ProtoProtocol.
+```

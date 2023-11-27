@@ -168,11 +168,10 @@ func (s *SessionLayer) connectServer(host TransportHost) {
 // - send ACK
 // assume connection is established and can start sending messages
 func (s *SessionLayer) handshakeServer(inChan chan HandshakeMessage, host TransportHost) {
-	serverHostMsg := <-inChan // await for ServerHost to be received from other peer
+	serverHostMsg := <-inChan // Await for ServerHost to be received from other peer
 	sessionHost := DeserializeHost(serverHostMsg.sessionMsg.msg)
-
-	buff, err := bytes.Buffer.Write()
-	s.transport.Send(TransportMessage{Msg: bytes.Buffer.Write()})
+	ackBuffer := bytes.NewBuffer([]byte{0x01})                // Create a buffer with a single byte for ACK
+	s.transport.Send(TransportMessage{Msg: *ackBuffer}, host) // Send ACK
 }
 
 // handshakeClient

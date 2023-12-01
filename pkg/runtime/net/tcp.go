@@ -70,13 +70,11 @@ func (t *TCPLayer) OutTransportEvents() chan TransportEvent {
 
 // send sends a message to the specified host
 func (t *TCPLayer) send(networkMessage TransportMessage, sendTo TransportHost) {
-	conn, ok := t.getActiveConn(sendTo)
-	if !ok {
+	if conn, ok := t.getActiveConn(sendTo); !ok {
 		// TODO: Properly log this, trying to send message to non active connection! (propagate error? or just log?)
 		return
 	} else {
-		_, err := conn.Write(networkMessage.Msg.Bytes())
-		if err != nil {
+		if _, err := conn.Write(networkMessage.Msg.Bytes()); err != nil {
 			t.outTransportEvents <- &TransportFailed{sendTo}
 			t.Disconnect(networkMessage.Host) // TODO: Replace with sendTo Host
 		}
@@ -85,10 +83,8 @@ func (t *TCPLayer) send(networkMessage TransportMessage, sendTo TransportHost) {
 
 // disconnect disconnects from the specified host
 func (t *TCPLayer) disconnect(host TransportHost) {
-	conn, ok := t.removeActiveConn(host)
-	if ok {
-		err := conn.Close()
-		if err != nil {
+	if conn, ok := t.removeActiveConn(host); ok {
+		if err := conn.Close(); err != nil {
 			// TODO: Proper Logging
 		}
 		t.outTransportEvents <- &TransportDisconnected{host}
@@ -172,14 +168,12 @@ func (t *TCPLayer) connectionHandler(ctx context.Context, conn net.Conn, host Tr
 	for {
 		select {
 		case <-ctx.Done():
-			err := conn.Close()
-			if err != nil {
+			if err := conn.Close(); err != nil {
 				return // TODO: Proper logging
 			}
 			return // TODO: Proper logging
 		default:
-			err := t.receiveMessage(conn, host)
-			if err != nil {
+			if err := t.receiveMessage(conn, host); err != nil {
 				t.disconnect(host)
 				return
 			}
@@ -192,8 +186,7 @@ func (t *TCPLayer) receiveMessage(conn net.Conn, host TransportHost) error {
 	buf := make([]byte, 4096)
 
 	// Set a read deadline for non-blocking read
-	err := conn.SetReadDeadline(time.Now().Add(time.Second * 1))
-	if err != nil {
+	if err := conn.SetReadDeadline(time.Now().Add(time.Second * 1)); err != nil {
 		return err // Indicates an error occurred
 	}
 
@@ -226,8 +219,7 @@ func (t *TCPLayer) addActiveConn(conn net.Conn, host TransportHost) {
 func (t *TCPLayer) removeActiveConn(host TransportHost) (net.Conn, bool) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
-	conn, ok := t.activeConnections[host]
-	if ok {
+	if conn, ok := t.activeConnections[host]; ok {
 		delete(t.activeConnections, host)
 		return conn, true
 	} else {

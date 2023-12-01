@@ -30,9 +30,9 @@ func TestTCPLayerConnection(t *testing.T) {
 			break
 		}
 		select {
-		case _ = <-secondNode.OutChannelEvents():
+		case _ = <-secondNode.OutTransportEvents():
 			connectCount++
-		case _ = <-firstNode.OutChannelEvents():
+		case _ = <-firstNode.OutTransportEvents():
 			connectCount++
 		}
 	}
@@ -70,9 +70,9 @@ func TestTCPLayerSendMessage(t *testing.T) {
 			break
 		}
 		select {
-		case _ = <-secondNode.OutChannelEvents():
+		case _ = <-secondNode.OutTransportEvents():
 			connectCount++
-		case _ = <-firstNode.OutChannelEvents():
+		case _ = <-firstNode.OutTransportEvents():
 			connectCount++
 		}
 	}
@@ -124,9 +124,9 @@ func TestDisconnect(t *testing.T) {
 			break
 		}
 		select {
-		case _ = <-secondNode.OutChannelEvents():
+		case _ = <-secondNode.OutTransportEvents():
 			connectCount++
-		case _ = <-firstNode.OutChannelEvents():
+		case _ = <-firstNode.OutTransportEvents():
 			connectCount++
 		}
 	}
@@ -139,9 +139,9 @@ func TestDisconnect(t *testing.T) {
 			break
 		}
 		select {
-		case _ = <-secondNode.OutChannelEvents():
+		case _ = <-secondNode.OutTransportEvents():
 			disconnectCount++
-		case _ = <-firstNode.OutChannelEvents():
+		case _ = <-firstNode.OutTransportEvents():
 			disconnectCount++
 		}
 	}

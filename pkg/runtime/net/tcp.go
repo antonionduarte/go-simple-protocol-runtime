@@ -11,14 +11,14 @@ import (
 
 type (
 	TCPLayer struct {
-		sendChan          chan TCPSendMessage
-		connectChan       chan TransportHost
-		disconnectChan    chan TransportHost
-		outChannel        chan TransportMessage
-		outChannelEvents  chan TransportEvent
-		activeConnections map[TransportHost]net.Conn
-		mutex             sync.Mutex // Mutex to protect concurrent access to activeConnections
-		self              TransportHost
+		sendChan           chan TCPSendMessage
+		connectChan        chan TransportHost
+		disconnectChan     chan TransportHost
+		outChannel         chan TransportMessage
+		outTransportEvents chan TransportEvent
+		activeConnections  map[TransportHost]net.Conn
+		mutex              sync.Mutex // Mutex to protect concurrent access to activeConnections TODO: Replace with RWLock
+		self               TransportHost
 	}
 
 	TCPSendMessage struct {
@@ -30,13 +30,13 @@ type (
 // NewTCPLayer creates a new TCPLayer and starts the listener
 func NewTCPLayer(self TransportHost, ctx context.Context) *TCPLayer {
 	tcpLayer := &TCPLayer{
-		outChannel:        make(chan TransportMessage, 10),
-		outChannelEvents:  make(chan TransportEvent),
-		activeConnections: make(map[TransportHost]net.Conn),
-		sendChan:          make(chan TCPSendMessage),
-		connectChan:       make(chan TransportHost),
-		disconnectChan:    make(chan TransportHost),
-		self:              self,
+		outChannel:         make(chan TransportMessage, 10),
+		outTransportEvents: make(chan TransportEvent),
+		activeConnections:  make(map[TransportHost]net.Conn),
+		sendChan:           make(chan TCPSendMessage),
+		connectChan:        make(chan TransportHost),
+		disconnectChan:     make(chan TransportHost),
+		self:               self,
 	}
 	tcpLayer.listen(ctx)     // Starting the listener in a goroutine
 	go tcpLayer.handler(ctx) // Starting the handler
@@ -65,7 +65,7 @@ func (t *TCPLayer) OutChannel() chan TransportMessage {
 
 // OutTransportEvents returns the channel for outgoing events
 func (t *TCPLayer) OutTransportEvents() chan TransportEvent {
-	return t.outChannelEvents
+	return t.outTransportEvents
 }
 
 // send sends a message to the specified host
@@ -77,7 +77,7 @@ func (t *TCPLayer) send(networkMessage TransportMessage, sendTo TransportHost) {
 	} else {
 		_, err := conn.Write(networkMessage.Msg.Bytes())
 		if err != nil {
-			t.outChannelEvents <- &TransportFailed{sendTo}
+			t.outTransportEvents <- &TransportFailed{sendTo}
 			t.Disconnect(networkMessage.Host) // TODO: Replace with sendTo Host
 		}
 	}
@@ -91,7 +91,7 @@ func (t *TCPLayer) disconnect(host TransportHost) {
 		if err != nil {
 			// TODO: Proper Logging
 		}
-		t.outChannelEvents <- &TransportDisconnected{host}
+		t.outTransportEvents <- &TransportDisconnected{host}
 	} else {
 		// TODO: Proper Logging
 	}
@@ -103,10 +103,10 @@ func (t *TCPLayer) disconnect(host TransportHost) {
 func (t *TCPLayer) connect(host TransportHost, ctx context.Context) {
 	conn, err := net.Dial("tcp", host.ToString())
 	if err != nil {
-		t.outChannelEvents <- &TransportFailed{host}
+		t.outTransportEvents <- &TransportFailed{host}
 		return
 	}
-	t.outChannelEvents <- &TransportConnected{host}
+	t.outTransportEvents <- &TransportConnected{host}
 	t.addActiveConn(conn, host)
 	go t.connectionHandler(ctx, conn, host)
 }
@@ -160,7 +160,7 @@ func (t *TCPLayer) listenerHandler(ctx context.Context, listener net.Listener) {
 				continue // doesn't launch the connection handler
 			}
 			host := NewTransportHost(conn.RemoteAddr().(*net.TCPAddr).Port, conn.RemoteAddr().(*net.TCPAddr).IP.String())
-			t.outChannelEvents <- &TransportConnected{host}
+			t.outTransportEvents <- &TransportConnected{host}
 			t.addActiveConn(conn, host)
 			go t.connectionHandler(ctx, conn, host)
 		}

@@ -14,7 +14,7 @@ import (
 )
 
 type Runtime struct {
-	cancelFunc    func() // TODO: Should I do this? Is this idiomatic?
+	cancelFunc    func()
 	msgChannel    chan Message
 	timerChannel  chan Timer
 	timerMutex    sync.Mutex
@@ -29,22 +29,21 @@ var (
 	once     sync.Once
 )
 
-// GetRuntimeInstance creates a new instance.
+// GetRuntimeInstance creates or returns the singleton instance.
 func GetRuntimeInstance() *Runtime {
 	once.Do(func() {
 		instance = &Runtime{
 			msgChannel:   make(chan Message, 1),
 			timerChannel: make(chan Timer, 1),
-			protocols:    make(map[int]*ProtoProtocol, 1),
+			protocols:    make(map[int]*ProtoProtocol),
 		}
 	})
 	return instance
 }
 
-// Start starts the instance, and runs the start and init function for all the protocols.
+// Start starts the instance.
 func (r *Runtime) Start() {
 	if r.networkLayer == nil {
-		// TODO: Replace with decent logger event.
 		panic("Network layer not registered")
 	}
 
@@ -52,8 +51,9 @@ func (r *Runtime) Start() {
 	ctx, cancel := context.WithCancel(ctx)
 	r.cancelFunc = cancel
 
-	r.startProtocols(ctx) // TODO: pass it the waitgroup
+	r.startProtocols(ctx)
 	r.initProtocols()
+
 	r.wg.Add(1)
 	go r.eventHandler(ctx)
 }
@@ -67,25 +67,31 @@ func (r *Runtime) StartWithDuration(duration time.Duration) {
 }
 
 // RegisterNetworkLayer registers the network layer that this runtime will use.
-// It takes in the TransportLayer that you're going to use. e.g. (pkg/runtime/net/tcp.go)
 func (r *Runtime) RegisterNetworkLayer(networkLayer net.TransportLayer) {
 	r.networkLayer = networkLayer
 }
 
-// RegisterMessageHandler registers a message handler to the instance.
+// RegisterMessageHandler registers a message handler for a given protocol & message ID.
 func RegisterMessageHandler(protocolID int, messageID int, handler func(Message)) {
 	runtime := GetRuntimeInstance()
-	runtime.protocols[protocolID].RegisterMessageHandler(messageID, handler)
+	proto := runtime.protocols[protocolID]
+	if proto == nil {
+		return // or panic/log an error
+	}
+	proto.RegisterMessageHandler(messageID, handler)
 }
 
-// RegisterMessageSerializer registers a message serializer to the instance.
+// RegisterMessageSerializer registers a message serializer for a given protocol & message ID.
 func RegisterMessageSerializer(protocolID int, messageID int, serializer Serializer) {
 	runtime := GetRuntimeInstance()
-	runtime.protocols[protocolID].RegisterMessageSerializer(messageID, serializer)
+	proto := runtime.protocols[protocolID]
+	if proto == nil {
+		return // or panic/log an error
+	}
+	proto.RegisterMessageSerializer(messageID, serializer)
 }
 
-// RegisterProtocol registers a protocol to the instance.
-// It must take in a ProtoProtocol, which should encapsulate the protocol that you yourself develop.
+// RegisterProtocol registers a protocol to the runtime.
 func (r *Runtime) RegisterProtocol(protocol *ProtoProtocol) {
 	r.protocols[protocol.ProtocolID()] = protocol
 }
@@ -95,15 +101,17 @@ func (r *Runtime) GetProtocol(protocolID int) *ProtoProtocol {
 	return r.protocols[protocolID]
 }
 
-// Cancel cancels the execution of the runtime instance an appropriately waits for all
-// goRoutines to gracefully finish execution.
+// Cancel gracefully stops the runtime.
 func (r *Runtime) Cancel() {
-	r.cancelFunc()          // this finishes execution of all the protocols
-	r.networkLayer.Cancel() // this finishes execution of the network layer
+	// Cancel protocols
+	r.cancelFunc()
+	// Also cancel the network layer
+	r.networkLayer.Cancel()
+	// Wait for all goroutines
 	r.wg.Wait()
 }
 
-// eventHandler of the runtime.
+// The central event loop
 func (r *Runtime) eventHandler(ctx context.Context) {
 	defer r.wg.Done()
 	for {
@@ -122,22 +130,19 @@ func (r *Runtime) eventHandler(ctx context.Context) {
 	}
 }
 
-// startProtocols runs the start function of the protocols.
 func (r *Runtime) startProtocols(ctx context.Context) {
 	for _, protocol := range r.protocols {
 		protocol.Start(ctx, &r.wg)
 	}
 }
 
-// initProtocols runs the initialize function of the protocols.
 func (r *Runtime) initProtocols() {
 	for _, protocol := range r.protocols {
 		protocol.Init()
 	}
 }
 
-// TODO: Should probably be called from within an init function
-// setupLogger configures a logrus logger.
+// Optionally called from main(), as you prefer
 func (r *Runtime) setupLogger() {
 	currentDate := time.Now().Format("2006-01-02")
 	fileName := currentDate + ".log"
@@ -146,40 +151,46 @@ func (r *Runtime) setupLogger() {
 	if err != nil {
 		log.Fatalf("Failed to open log file: %v", err)
 	}
-	defer func(file *os.File) {
-		_ = file.Close()
-	}(file)
+	defer file.Close()
 
 	mw := io.MultiWriter(os.Stdout, file)
 	log.SetOutput(mw)
 	log.Info("Logger initialized")
 }
 
-// processMessage receives a message from the Network Layer.
+// processMessage reads protocolID + messageID from the buffer and dispatches to the correct serializer.
 func processMessage(networkMessage net.TransportMessage) {
 	buffer := networkMessage.Msg
 
 	var protocolID, messageID uint16
 	if err := binary.Read(&buffer, binary.LittleEndian, &protocolID); err != nil {
-		// TODO: Handle the error
+		// TODO: log error
 		return
 	}
 	if err := binary.Read(&buffer, binary.LittleEndian, &messageID); err != nil {
-		// TODO: Handle the error
+		// TODO: log error
 		return
 	}
 
-	protocol, exists := instance.protocols[int(protocolID)]
+	runtime := GetRuntimeInstance()
+	protocol, exists := runtime.protocols[int(protocolID)]
 	if !exists {
-		// TODO: Handle the error (unknown protocol)
+		// TODO: unknown protocol
 		return
 	}
 
-	message, err := protocol.msgSerializers[int(messageID)].Deserialize(buffer)
+	serializer, ok := protocol.msgSerializers[int(messageID)]
+	if !ok {
+		// TODO: unknown message
+		return
+	}
+
+	message, err := serializer.Deserialize(buffer)
 	if err != nil {
-		// TODO: Handle the error
+		// TODO: log error
 		return
 	}
 
+	// push the message to that protocol's channel
 	protocol.messageChannel <- message
 }

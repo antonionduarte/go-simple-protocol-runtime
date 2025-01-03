@@ -2,14 +2,11 @@ package runtime
 
 import (
 	"bytes"
-	"encoding/binary"
 
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 )
 
-// Message is an interface that all messages must implement.
-// It is used to identify to which protocol the message belongs.
-
+// Message is an interface all messages must implement
 type (
 	Message interface {
 		MessageID() int
@@ -24,34 +21,45 @@ type (
 	}
 )
 
+// Helper to send a message up the Transport Layer
 func SendMessage(msg Message, sendTo net.Host) {
+	// 1) Serialize the message
 	msgBuffer, err := msg.Serializer().Serialize()
 	if err != nil {
-		// TODO: Replace with decent logger event.
+		// log or handle error
+		return
 	}
 
-	// Create a buffer and write Sender's Host, ProtoID, MessageID, and the message.
+	// 2) Create a buffer that includes [protocolID, messageID] + the msg bytes
 	buffer := new(bytes.Buffer)
 
-	// Serialize the sender's Host
-	senderHostBuffer := net.SerializeHost(msg.Sender())
-	buffer.Write(senderHostBuffer.Bytes())
-
-	// Serialize ProtoID and MessageID
 	protocolID := uint16(msg.ProtocolID())
-	err = binary.Write(buffer, binary.LittleEndian, protocolID)
-	if err != nil {
-		return // TODO: Properly log this error
-	}
-
 	messageID := uint16(msg.MessageID())
-	err = binary.Write(buffer, binary.LittleEndian, messageID)
-	if err != nil {
-		return // TODO: Properly log this error
-	}
 
+	// Write the protocolID, messageID
+	_ = writeUint16(buffer, protocolID)
+	_ = writeUint16(buffer, messageID)
+
+	// Append the actual message payload
 	buffer.Write(msgBuffer.Bytes())
 
-	networkMessage := net.NewTransportMessage(*buffer, sendTo)
-	GetRuntimeInstance().networkLayer.Send(networkMessage)
+	// 3) Create a TransportMessage with the buffer
+	transportMsg := net.NewTransportMessage(*buffer, net.NewTransportHost(sendTo.Port, sendTo.IP))
+
+	// 4) Now call Send() with TWO arguments:
+	//    - the TransportMessage
+	//    - the TransportHost we want to send to
+	GetRuntimeInstance().networkLayer.Send(
+		transportMsg,
+		net.NewTransportHost(sendTo.Port, sendTo.IP),
+	)
+}
+
+// Utility for writing uint16 in little endian
+func writeUint16(buf *bytes.Buffer, val uint16) error {
+	tmp := make([]byte, 2)
+	tmp[0] = byte(val)      // low byte
+	tmp[1] = byte(val >> 8) // high byte
+	_, err := buf.Write(tmp)
+	return err
 }

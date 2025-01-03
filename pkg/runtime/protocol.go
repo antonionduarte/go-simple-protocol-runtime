@@ -9,10 +9,10 @@ import (
 
 type (
 	Protocol interface {
-		Start()          // Start the protocol, and register all the message handlers
-		Init()           // Init the protocol, runs after all protocols are registered, send initial messages here
-		ProtocolID() int // Returns the protocol ID
-		Self() *net.Host // Returns the host of the protocol - basically forces you to keep your own host.
+		Start()
+		Init()
+		ProtocolID() int
+		Self() *net.Host
 	}
 
 	ProtoProtocol struct {
@@ -20,19 +20,20 @@ type (
 		self           net.Host
 		timerChannel   chan Timer
 		messageChannel chan Message
+
 		msgSerializers map[int]Serializer
 		msgHandlers    map[int]func(msg Message)
 		timerHandlers  map[int]func(timer Timer)
 	}
 )
 
-func NewProtoProtocol(protocol Protocol, self net.Host) *ProtoProtocol {
+func NewProtoProtocol(protocol Protocol, self *net.Host) *ProtoProtocol {
 	return &ProtoProtocol{
 		protocol:       protocol,
-		self:           self,
-		msgSerializers: make(map[int]Serializer),
-		messageChannel: make(chan Message, 1),
+		self:           *self,
 		timerChannel:   make(chan Timer, 1),
+		messageChannel: make(chan Message, 1),
+		msgSerializers: make(map[int]Serializer),
 		msgHandlers:    make(map[int]func(msg Message)),
 		timerHandlers:  make(map[int]func(timer Timer)),
 	}
@@ -73,17 +74,22 @@ func (p *ProtoProtocol) MessageChannel() chan Message {
 }
 
 func (p *ProtoProtocol) eventHandler(ctx context.Context, wg *sync.WaitGroup) {
-	wg.Done()
+	defer wg.Done()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case msg := <-p.messageChannel:
 			handler := p.msgHandlers[msg.MessageID()]
-			handler(msg)
+			if handler != nil {
+				handler(msg)
+			}
 		case timer := <-p.timerChannel:
 			handler := p.timerHandlers[timer.TimerID()]
-			handler(timer)
+			if handler != nil {
+				handler(timer)
+			}
 		}
 	}
 }

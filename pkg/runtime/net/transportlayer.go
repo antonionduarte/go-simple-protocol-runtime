@@ -2,18 +2,23 @@ package net
 
 import (
 	"bytes"
-	"strconv"
+	"fmt"
 )
 
-type (
-	TransportLayer interface {
-		Connect(host TransportHost)
-		Disconnect(host TransportHost)
-		Send(msg TransportMessage, sendTo TransportHost)
-		OutChannel() chan TransportMessage
-		OutTransportEvents() chan TransportEvent
-	}
+// TransportLayer is the interface for the underlying network.
+type TransportLayer interface {
+	Connect(host TransportHost)
+	Disconnect(host TransportHost)
+	Send(msg TransportMessage, sendTo TransportHost)
 
+	OutChannel() chan TransportMessage
+	OutTransportEvents() chan TransportEvent
+
+	// Added Cancel() so runtime can call it
+	Cancel()
+}
+
+type (
 	TransportMessage struct {
 		Host TransportHost
 		Msg  bytes.Buffer
@@ -25,7 +30,6 @@ type (
 	}
 
 	TransportEvent interface {
-		// Host returns associated Host of the Transport Event
 		Host() TransportHost
 	}
 
@@ -53,18 +57,9 @@ func NewTransportMessage(msg bytes.Buffer, host TransportHost) TransportMessage 
 	return TransportMessage{Msg: msg, Host: host}
 }
 
-func (e *TransportConnected) Host() TransportHost {
-	return e.host
-}
-
-func (e *TransportDisconnected) Host() TransportHost {
-	return e.host
-}
-
-func (e *TransportFailed) Host() TransportHost {
-	return e.host
-}
-
-func (host *TransportHost) ToString() string {
-	return host.IP + ":" + strconv.Itoa(host.Port)
+func (e *TransportConnected) Host() TransportHost    { return e.host }
+func (e *TransportDisconnected) Host() TransportHost { return e.host }
+func (e *TransportFailed) Host() TransportHost       { return e.host }
+func (th TransportHost) ToString() string {
+	return fmt.Sprintf("%s:%d", th.IP, th.Port)
 }

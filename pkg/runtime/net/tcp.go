@@ -47,7 +47,7 @@ func NewTCPLayer(self Host, ctx context.Context) *TCPLayer {
 	}
 
 	slog.Info("tcp layer starting", "self", self.ToString())
-	tcpLayer.listen() // start listening
+	tcpLayer.listen()     // start listening
 	go tcpLayer.handler() // start main event loop
 	return tcpLayer
 }
@@ -200,9 +200,13 @@ func (t *TCPLayer) connectionHandler(conn net.Conn, host Host) {
 				return
 			}
 			// push upward
+			// Copy the bytes into a new slice so that subsequent reads
+			// on buf do not race with readers of this TransportMessage.
+			data := make([]byte, n)
+			copy(data, buf[:n])
 			t.outChannel <- TransportMessage{
 				Host: host,
-				Msg:  *bytes.NewBuffer(buf[:n]),
+				Msg:  *bytes.NewBuffer(data),
 			}
 		}
 	}
@@ -230,4 +234,12 @@ func (t *TCPLayer) getActiveConn(host Host) (net.Conn, bool) {
 	defer t.mutex.Unlock()
 	conn, ok := t.activeConnections[host]
 	return conn, ok
+}
+
+// activeConnectionCount returns the number of active connections in a
+// concurrency-safe way. Intended for use in tests.
+func (t *TCPLayer) activeConnectionCount() int {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	return len(t.activeConnections)
 }

@@ -37,11 +37,11 @@ func TestTCPLayerConnection(t *testing.T) {
 		}
 	}
 
-	if len(secondNode.activeConnections) != 1 {
+	if secondNode.activeConnectionCount() != 1 {
 		t.Errorf("TCPConnection on secondNode should've been established.")
 	}
 
-	if len(firstNode.activeConnections) != 1 {
+	if firstNode.activeConnectionCount() != 1 {
 		t.Errorf("TCPConnection on firstNode should've been established.")
 	}
 }
@@ -146,11 +146,11 @@ func TestDisconnect(t *testing.T) {
 		}
 	}
 
-	if len(firstNode.activeConnections) != 0 {
+	if firstNode.activeConnectionCount() != 0 {
 		t.Errorf("TCPConnection on firstNode should've been deleted.")
 	}
 
-	if len(secondNode.activeConnections) != 0 {
+	if secondNode.activeConnectionCount() != 0 {
 		t.Errorf("TCPConnection on secondNode should've been deleted.")
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"sync"
 )
 
 // SessionLayer is intended to abstract connection handshakes at the "session" level.
@@ -22,6 +23,8 @@ type (
 
 		ctx        context.Context
 		cancelFunc context.CancelFunc
+
+		mu sync.Mutex // guards ongoingHandshakes and serverMappings
 	}
 
 	// HandshakeMessage is used internally to pass around events or messages during handshake.
@@ -184,7 +187,9 @@ func (s *SessionLayer) transportMessageHandler(msg TransportMessage) {
 	case Session:
 		// This is a handshake-level message for an ongoing handshake
 		slog.Debug("session handshake message received", "from", msg.Host.ToString(), "bytes", sessionMsg.Msg.Len())
+		s.mu.Lock()
 		ch, ok := s.ongoingHandshakes[msg.Host]
+		s.mu.Unlock()
 		if ok {
 			ch <- HandshakeMessage{sessionMsg: sessionMsg}
 		}
@@ -218,9 +223,14 @@ func (s *SessionLayer) transportEventHandler(event TransportEvent) {
 
 	case *TransportFailed:
 		// If there's a handshake in progress, we notify it
+		s.mu.Lock()
 		if ch, ok := s.ongoingHandshakes[e.Host()]; ok {
-			ch <- HandshakeMessage{event: e}
+			// copy pointer under lock but send outside the lock
+			go func(ch chan HandshakeMessage, ev TransportEvent) {
+				ch <- HandshakeMessage{event: ev}
+			}(ch, e)
 		}
+		s.mu.Unlock()
 		h := s.mapToHost(e.Host())
 		slog.Warn("session transport failed", "host", h.ToString())
 		s.outChannelEvents <- &SessionFailed{host: h}
@@ -235,7 +245,9 @@ func (s *SessionLayer) transportEventHandler(event TransportEvent) {
 func (s *SessionLayer) connectClient(h Host) {
 	// Create a channel for handshake steps
 	handshakeChannel := make(chan HandshakeMessage)
+	s.mu.Lock()
 	s.ongoingHandshakes[h] = handshakeChannel
+	s.mu.Unlock()
 
 	// Initiate the actual transport connection
 	slog.Info("session initiating client handshake", "to", h.ToString())
@@ -249,7 +261,9 @@ func (s *SessionLayer) connectClient(h Host) {
 // from a remote node (acting as "server" side of handshake).
 func (s *SessionLayer) connectServer(h Host) {
 	handshakeChannel := make(chan HandshakeMessage)
+	s.mu.Lock()
 	s.ongoingHandshakes[h] = handshakeChannel
+	s.mu.Unlock()
 	slog.Info("session initiating server handshake", "remote", h.ToString())
 	go s.handshakeServer(handshakeChannel, h)
 }
@@ -259,8 +273,10 @@ func (s *SessionLayer) disconnect(h Host) {
 	s.transport.Disconnect(h)
 
 	// optionally clean up handshake or server mapping
+	s.mu.Lock()
 	_ = s.cleanupOngoingHandshake(h)
 	_ = s.cleanupServerMapping(h)
+	s.mu.Unlock()
 }
 
 // send is called when the user wants to send an application-level message to a Host
@@ -376,6 +392,8 @@ func (s *SessionLayer) handshakeClient(inChan chan HandshakeMessage, h Host) {
 
 // cleanupOngoingHandshake removes the handshake channel for tHost
 func (s *SessionLayer) cleanupOngoingHandshake(h Host) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if _, ok := s.ongoingHandshakes[h]; ok {
 		delete(s.ongoingHandshakes, h)
 		return true
@@ -385,6 +403,8 @@ func (s *SessionLayer) cleanupOngoingHandshake(h Host) bool {
 
 // cleanupServerMapping removes the serverMapping for tHost
 func (s *SessionLayer) cleanupServerMapping(h Host) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if _, ok := s.serverMappings[h]; ok {
 		delete(s.serverMappings, h)
 		return true
@@ -394,6 +414,8 @@ func (s *SessionLayer) cleanupServerMapping(h Host) bool {
 
 // mapToHost returns the Host from serverMappings if present, or a fallback
 func (s *SessionLayer) mapToHost(h Host) Host {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if mapped, ok := s.serverMappings[h]; ok {
 		return mapped
 	}

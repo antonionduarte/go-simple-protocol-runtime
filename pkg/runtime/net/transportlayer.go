@@ -1,15 +1,12 @@
 package net
 
-import (
-	"bytes"
-	"fmt"
-)
+import "bytes"
 
 // TransportLayer is the interface for the underlying network.
 type TransportLayer interface {
-	Connect(host TransportHost)
-	Disconnect(host TransportHost)
-	Send(msg TransportMessage, sendTo TransportHost)
+	Connect(host Host)
+	Disconnect(host Host)
+	Send(msg TransportMessage, sendTo Host)
 
 	OutChannel() chan TransportMessage
 	OutTransportEvents() chan TransportEvent
@@ -20,46 +17,31 @@ type TransportLayer interface {
 
 type (
 	TransportMessage struct {
-		Host TransportHost
+		Host Host
 		Msg  bytes.Buffer
 	}
 
-	TransportHost struct {
-		Port int
-		IP   string
-	}
-
 	TransportEvent interface {
-		Host() TransportHost
+		Host() Host
 	}
 
 	TransportConnected struct {
-		host TransportHost
+		host Host
 	}
 
 	TransportDisconnected struct {
-		host TransportHost
+		host Host
 	}
 
 	TransportFailed struct {
-		host TransportHost
+		host Host
 	}
 )
 
-func NewTransportHost(port int, ip string) TransportHost {
-	return TransportHost{
-		Port: port,
-		IP:   ip,
-	}
-}
-
-func NewTransportMessage(msg bytes.Buffer, host TransportHost) TransportMessage {
+func NewTransportMessage(msg bytes.Buffer, host Host) TransportMessage {
 	return TransportMessage{Msg: msg, Host: host}
 }
 
-func (e *TransportConnected) Host() TransportHost    { return e.host }
-func (e *TransportDisconnected) Host() TransportHost { return e.host }
-func (e *TransportFailed) Host() TransportHost       { return e.host }
-func (th TransportHost) ToString() string {
-	return fmt.Sprintf("%s:%d", th.IP, th.Port)
-}
+func (e *TransportConnected) Host() Host    { return e.host }
+func (e *TransportDisconnected) Host() Host { return e.host }
+func (e *TransportFailed) Host() Host       { return e.host }

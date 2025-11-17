@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"testing"
 
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
@@ -62,13 +63,13 @@ func NewMockNetworkLayer() *MockNetworkLayer {
 }
 
 // Implement TransportLayer interface
-func (m *MockNetworkLayer) Connect(host net.TransportHost) {
+func (m *MockNetworkLayer) Connect(host net.Host) {
 	m.ConnectCalled = true
 }
-func (m *MockNetworkLayer) Disconnect(host net.TransportHost) {
+func (m *MockNetworkLayer) Disconnect(host net.Host) {
 	m.DisconnectCalled = true
 }
-func (m *MockNetworkLayer) Send(msg net.TransportMessage, sendTo net.TransportHost) {
+func (m *MockNetworkLayer) Send(msg net.TransportMessage, sendTo net.Host) {
 	m.SendCalled = true
 }
 func (m *MockNetworkLayer) OutChannel() chan net.TransportMessage {
@@ -118,6 +119,10 @@ func TestStartAndCancel(t *testing.T) {
 	// We create and register a MockNetworkLayer that matches the new TransportLayer interface
 	mockNetworkLayer := NewMockNetworkLayer()
 	runtime.RegisterNetworkLayer(mockNetworkLayer)
+	// And a SessionLayer that wraps it (no real traffic in this test)
+	self := net.NewHost(0, "127.0.0.1")
+	session := net.NewSessionLayer(mockNetworkLayer, self, context.Background())
+	runtime.RegisterSessionLayer(session)
 
 	// Start the runtime
 	runtime.Start()

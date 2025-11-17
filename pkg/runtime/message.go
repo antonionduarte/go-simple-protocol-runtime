@@ -43,16 +43,10 @@ func SendMessage(msg Message, sendTo net.Host) {
 	// Append the actual message payload
 	buffer.Write(msgBuffer.Bytes())
 
-	// 3) Create a TransportMessage with the buffer
-	transportMsg := net.NewTransportMessage(*buffer, net.NewTransportHost(sendTo.Port, sendTo.IP))
-
-	// 4) Now call Send() with TWO arguments:
-	//    - the TransportMessage
-	//    - the TransportHost we want to send to
-	GetRuntimeInstance().networkLayer.Send(
-		transportMsg,
-		net.NewTransportHost(sendTo.Port, sendTo.IP),
-	)
+	// 3) Send the message via the session layer, marking it as an
+	// Application-level message (LayerID is added by the session layer).
+	runtime := GetRuntimeInstance()
+	runtime.sessionLayer.Send(*buffer, sendTo)
 }
 
 // Utility for writing uint16 in little endian

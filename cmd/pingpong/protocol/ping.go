@@ -1,6 +1,8 @@
 package protocol
 
 import (
+	"log/slog"
+
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime"
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 )
@@ -13,15 +15,17 @@ type (
 	PingPongProtocol struct {
 		protocolID int
 		self       *net.Host
+		peer       *net.Host
 	}
 )
 
 /*----------- Constructor ----------- */
 
-func NewPingPongProtocol(self *net.Host) *PingPongProtocol {
+func NewPingPongProtocol(self *net.Host, peer *net.Host) *PingPongProtocol {
 	return &PingPongProtocol{
 		protocolID: PingPongProtocolId,
 		self:       self,
+		peer:       peer,
 	}
 }
 
@@ -38,7 +42,8 @@ func (p *PingPongProtocol) Start() {
 }
 
 func (p *PingPongProtocol) Init() {
-	// send initial messages here
+	// Initial Ping is triggered from main() once the session
+	// to the peer is established.
 }
 
 func (p *PingPongProtocol) ProtocolID() int {
@@ -55,20 +60,22 @@ func (p *PingPongProtocol) HandlePing(msg runtime.Message) {
 	// when accessing the message, you need to cast it to the correct type
 	ping := msg.(*PingMessage)
 
-	// do something with the message
-	// ...
+	from := ping.Sender()
+	slog.Info("Ping received", "from", (&from).ToString())
 
-	print(ping) // placeholder
+	// Reply with a Pong to the configured peer
+	runtime.SendMessage(NewPongMessage(*p.self), *p.peer)
 }
 
 func (p *PingPongProtocol) HandlePong(msg runtime.Message) {
 	// when accessing the message, you need to cast it to the correct type
 	pong := msg.(*PongMessage)
 
-	// do something with the message
-	// ...
+	from := pong.Sender()
+	slog.Info("Pong received", "from", (&from).ToString())
 
-	print(pong) // placeholder
+	// Send another Ping back to the peer for continuous ping-pong.
+	runtime.SendMessage(NewPingMessage(*p.self), *p.peer)
 }
 
 /*----------- Timer Handlers ----------- */

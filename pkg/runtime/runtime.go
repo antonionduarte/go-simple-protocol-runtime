@@ -1,9 +1,11 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"io"
+	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -22,6 +24,7 @@ type Runtime struct {
 	ongoingTimers map[int]*time.Timer
 	protocols     map[int]*ProtoProtocol
 	networkLayer  net.TransportLayer
+	sessionLayer  *net.SessionLayer
 }
 
 var (
@@ -43,13 +46,11 @@ func GetRuntimeInstance() *Runtime {
 
 // Start starts the instance.
 func (r *Runtime) Start() {
-	if r.networkLayer == nil {
-		panic("Network layer not registered")
-	}
-
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	r.cancelFunc = cancel
+
+	slog.Info("runtime starting")
 
 	r.startProtocols(ctx)
 	r.initProtocols()
@@ -69,6 +70,11 @@ func (r *Runtime) StartWithDuration(duration time.Duration) {
 // RegisterNetworkLayer registers the network layer that this runtime will use.
 func (r *Runtime) RegisterNetworkLayer(networkLayer net.TransportLayer) {
 	r.networkLayer = networkLayer
+}
+
+// RegisterSessionLayer registers the session layer that this runtime will use.
+func (r *Runtime) RegisterSessionLayer(sessionLayer *net.SessionLayer) {
+	r.sessionLayer = sessionLayer
 }
 
 // RegisterMessageHandler registers a message handler for a given protocol & message ID.
@@ -105,10 +111,16 @@ func (r *Runtime) GetProtocol(protocolID int) *ProtoProtocol {
 func (r *Runtime) Cancel() {
 	// Cancel protocols
 	r.cancelFunc()
-	// Also cancel the network layer
-	r.networkLayer.Cancel()
+	// Also cancel the network/session layers if present
+	if r.sessionLayer != nil {
+		r.sessionLayer.Cancel()
+	}
+	if r.networkLayer != nil {
+		r.networkLayer.Cancel()
+	}
 	// Wait for all goroutines
 	r.wg.Wait()
+	slog.Info("runtime stopped")
 }
 
 // The central event loop
@@ -124,20 +136,23 @@ func (r *Runtime) eventHandler(ctx context.Context) {
 		case timer := <-r.timerChannel:
 			protocol := r.protocols[timer.ProtocolID()]
 			protocol.TimerChannel() <- timer
-		case networkMessage := <-r.networkLayer.OutChannel():
-			processMessage(networkMessage)
+		// Application-level messages from the session layer
+		case sessionMsg := <-r.sessionLayer.OutMessages():
+			processMessage(sessionMsg.Msg, sessionMsg.Host())
 		}
 	}
 }
 
 func (r *Runtime) startProtocols(ctx context.Context) {
 	for _, protocol := range r.protocols {
+		slog.Info("starting protocol", "protocolID", protocol.ProtocolID())
 		protocol.Start(ctx, &r.wg)
 	}
 }
 
 func (r *Runtime) initProtocols() {
 	for _, protocol := range r.protocols {
+		slog.Info("initializing protocol", "protocolID", protocol.ProtocolID())
 		protocol.Init()
 	}
 }
@@ -158,10 +173,15 @@ func (r *Runtime) setupLogger() {
 	log.Info("Logger initialized")
 }
 
-// processMessage reads protocolID + messageID from the buffer and dispatches to the correct serializer.
-func processMessage(networkMessage net.TransportMessage) {
-	buffer := networkMessage.Msg
+// senderSetter is implemented by messages that want to be informed
+// about the remote Host that sent them.
+type senderSetter interface {
+	SetSender(net.Host)
+}
 
+// processMessage reads protocolID + messageID from the buffer and dispatches to the correct serializer.
+// The buffer is expected to start with [ProtocolID(uint16) || MessageID(uint16) || Payload...].
+func processMessage(buffer bytes.Buffer, from net.Host) {
 	var protocolID, messageID uint16
 	if err := binary.Read(&buffer, binary.LittleEndian, &protocolID); err != nil {
 		// TODO: log error
@@ -176,21 +196,31 @@ func processMessage(networkMessage net.TransportMessage) {
 	protocol, exists := runtime.protocols[int(protocolID)]
 	if !exists {
 		// TODO: unknown protocol
+		slog.Warn("received message for unknown protocol", "protocolID", protocolID, "messageID", messageID)
 		return
 	}
 
 	serializer, ok := protocol.msgSerializers[int(messageID)]
 	if !ok {
 		// TODO: unknown message
+		slog.Warn("received message for unknown messageID", "protocolID", protocolID, "messageID", messageID)
 		return
 	}
 
 	message, err := serializer.Deserialize(buffer)
 	if err != nil {
 		// TODO: log error
+		slog.Error("failed to deserialize message", "protocolID", protocolID, "messageID", messageID, "err", err)
 		return
 	}
 
+	// If the concrete message type supports setting the sender,
+	// inform it of the remote host that sent this message.
+	if m, ok := message.(senderSetter); ok {
+		m.SetSender(from)
+	}
+
 	// push the message to that protocol's channel
+	slog.Debug("dispatching message", "protocolID", protocolID, "messageID", messageID)
 	protocol.messageChannel <- message
 }

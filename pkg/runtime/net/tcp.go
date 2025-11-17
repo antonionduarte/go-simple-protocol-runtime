@@ -3,6 +3,7 @@ package net
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"net"
 	"sync"
 	"time"
@@ -11,54 +12,58 @@ import (
 type (
 	TCPLayer struct {
 		sendChan           chan TCPSendMessage
-		connectChan        chan TransportHost
-		disconnectChan     chan TransportHost
+		connectChan        chan Host
+		disconnectChan     chan Host
 		outChannel         chan TransportMessage
 		outTransportEvents chan TransportEvent
-		activeConnections  map[TransportHost]net.Conn
+		activeConnections  map[Host]net.Conn
 		mutex              sync.Mutex
-		self               TransportHost
+		self               Host
 
 		cancelFunc context.CancelFunc
 		ctx        context.Context
 	}
 
 	TCPSendMessage struct {
-		host TransportHost
+		host Host
 		msg  TransportMessage
 	}
 )
 
 // NewTCPLayer now expects a context, since it uses goroutines
-func NewTCPLayer(self TransportHost, ctx context.Context) *TCPLayer {
+func NewTCPLayer(self Host, ctx context.Context) *TCPLayer {
 	// derive a cancelable context for the TCP layer itself
 	ctx, cancel := context.WithCancel(ctx)
 	tcpLayer := &TCPLayer{
 		outChannel:         make(chan TransportMessage, 10),
 		outTransportEvents: make(chan TransportEvent, 10),
-		activeConnections:  make(map[TransportHost]net.Conn),
+		activeConnections:  make(map[Host]net.Conn),
 		sendChan:           make(chan TCPSendMessage),
-		connectChan:        make(chan TransportHost),
-		disconnectChan:     make(chan TransportHost),
+		connectChan:        make(chan Host),
+		disconnectChan:     make(chan Host),
 		self:               self,
 		ctx:                ctx,
 		cancelFunc:         cancel,
 	}
 
-	tcpLayer.listen()     // start listening
+	slog.Info("tcp layer starting", "self", self.ToString())
+	tcpLayer.listen() // start listening
 	go tcpLayer.handler() // start main event loop
 	return tcpLayer
 }
 
-func (t *TCPLayer) Send(msg TransportMessage, sendTo TransportHost) {
+func (t *TCPLayer) Send(msg TransportMessage, sendTo Host) {
+	slog.Debug("tcp send requested", "to", sendTo.ToString(), "bytes", msg.Msg.Len())
 	t.sendChan <- TCPSendMessage{sendTo, msg}
 }
 
-func (t *TCPLayer) Connect(host TransportHost) {
+func (t *TCPLayer) Connect(host Host) {
+	slog.Info("tcp connect requested", "to", host.ToString())
 	t.connectChan <- host
 }
 
-func (t *TCPLayer) Disconnect(host TransportHost) {
+func (t *TCPLayer) Disconnect(host Host) {
+	slog.Info("tcp disconnect requested", "host", host.ToString())
 	t.disconnectChan <- host
 }
 
@@ -87,7 +92,7 @@ func (t *TCPLayer) Cancel() {
 	t.mutex.Unlock()
 }
 
-func (t *TCPLayer) send(networkMessage TransportMessage, sendTo TransportHost) {
+func (t *TCPLayer) send(networkMessage TransportMessage, sendTo Host) {
 	conn, ok := t.getActiveConn(sendTo)
 	if !ok {
 		// no active connection
@@ -99,7 +104,7 @@ func (t *TCPLayer) send(networkMessage TransportMessage, sendTo TransportHost) {
 	}
 }
 
-func (t *TCPLayer) disconnect(host TransportHost) {
+func (t *TCPLayer) disconnect(host Host) {
 	conn, ok := t.removeActiveConn(host)
 	if ok {
 		_ = conn.Close()
@@ -107,14 +112,16 @@ func (t *TCPLayer) disconnect(host TransportHost) {
 	}
 }
 
-func (t *TCPLayer) connect(host TransportHost) {
-	conn, err := net.Dial("tcp", host.ToString())
+func (t *TCPLayer) connect(host Host) {
+	conn, err := net.Dial("tcp", (&host).ToString())
 	if err != nil {
+		slog.Error("tcp connect failed", "host", host.ToString(), "err", err)
 		t.outTransportEvents <- &TransportFailed{host: host}
 		return
 	}
-	t.outTransportEvents <- &TransportConnected{host: host}
+	slog.Info("tcp connect established", "host", host.ToString())
 	t.addActiveConn(conn, host)
+	t.outTransportEvents <- &TransportConnected{host: host}
 
 	go t.connectionHandler(conn, host)
 }
@@ -137,9 +144,10 @@ func (t *TCPLayer) handler() {
 func (t *TCPLayer) listen() {
 	ln, err := net.Listen("tcp", t.self.ToString())
 	if err != nil {
-		// log or panic
+		slog.Error("tcp listen failed", "self", t.self.ToString(), "err", err)
 		return
 	}
+	slog.Info("tcp listening", "self", t.self.ToString())
 	go t.listenerHandler(ln)
 }
 
@@ -158,16 +166,18 @@ func (t *TCPLayer) listenerHandler(listener net.Listener) {
 			}
 		}
 		remote := conn.RemoteAddr().(*net.TCPAddr)
-		host := NewTransportHost(remote.Port, remote.IP.String())
+		host := NewHost(remote.Port, remote.IP.String())
 
-		t.outTransportEvents <- &TransportConnected{host: host}
+		slog.Info("tcp inbound connection accepted", "remote", host.ToString())
+
 		t.addActiveConn(conn, host)
+		t.outTransportEvents <- &TransportConnected{host: host}
 
 		go t.connectionHandler(conn, host)
 	}
 }
 
-func (t *TCPLayer) connectionHandler(conn net.Conn, host TransportHost) {
+func (t *TCPLayer) connectionHandler(conn net.Conn, host Host) {
 	buf := make([]byte, 4096)
 	for {
 		select {
@@ -185,6 +195,7 @@ func (t *TCPLayer) connectionHandler(conn net.Conn, host TransportHost) {
 					continue
 				}
 				// real error -> disconnect
+				slog.Error("tcp read error, disconnecting", "host", host.ToString(), "err", err)
 				t.disconnect(host)
 				return
 			}
@@ -198,13 +209,13 @@ func (t *TCPLayer) connectionHandler(conn net.Conn, host TransportHost) {
 }
 
 // concurrency-safe
-func (t *TCPLayer) addActiveConn(conn net.Conn, host TransportHost) {
+func (t *TCPLayer) addActiveConn(conn net.Conn, host Host) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	t.activeConnections[host] = conn
 }
 
-func (t *TCPLayer) removeActiveConn(host TransportHost) (net.Conn, bool) {
+func (t *TCPLayer) removeActiveConn(host Host) (net.Conn, bool) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	conn, ok := t.activeConnections[host]
@@ -214,7 +225,7 @@ func (t *TCPLayer) removeActiveConn(host TransportHost) (net.Conn, bool) {
 	return conn, ok
 }
 
-func (t *TCPLayer) getActiveConn(host TransportHost) (net.Conn, bool) {
+func (t *TCPLayer) getActiveConn(host Host) (net.Conn, bool) {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	conn, ok := t.activeConnections[host]

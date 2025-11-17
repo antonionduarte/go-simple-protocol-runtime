@@ -7,8 +7,8 @@ import (
 )
 
 func TestTCPLayerConnection(t *testing.T) {
-	first := NewTransportHost(6503, "127.0.0.1")
-	second := NewTransportHost(6504, "127.0.0.1")
+	first := NewHost(6503, "127.0.0.1")
+	second := NewHost(6504, "127.0.0.1")
 
 	firstCtx := context.Background()
 	secondCtx := context.Background()
@@ -47,8 +47,8 @@ func TestTCPLayerConnection(t *testing.T) {
 }
 
 func TestTCPLayerSendMessage(t *testing.T) {
-	first := NewTransportHost(7501, "127.0.0.1")
-	second := NewTransportHost(7502, "127.0.0.1")
+	first := NewHost(7501, "127.0.0.1")
+	second := NewHost(7502, "127.0.0.1")
 
 	firstCtx := context.Background()
 	secondCtx := context.Background()
@@ -86,7 +86,7 @@ func TestTCPLayerSendMessage(t *testing.T) {
 		t.Errorf("SecondNode received incorrect message.")
 	}
 
-	var clientHost TransportHost
+	var clientHost Host
 	for key := range secondNode.activeConnections {
 		clientHost = key
 		break
@@ -101,8 +101,8 @@ func TestTCPLayerSendMessage(t *testing.T) {
 }
 
 func TestDisconnect(t *testing.T) {
-	first := NewTransportHost(6913, "127.0.0.1")
-	second := NewTransportHost(6912, "127.0.0.1")
+	first := NewHost(6913, "127.0.0.1")
+	second := NewHost(6912, "127.0.0.1")
 
 	firstCtx := context.Background()
 	secondCtx := context.Background()

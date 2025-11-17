@@ -14,16 +14,30 @@ type (
 		Sender() net.Host
 	}
 
+	// Serializer is responsible for encoding and decoding concrete Message
+	// types. Implementations must obey the following contract:
+	//   - Serialize MUST NOT mutate the Message instance.
+	//   - Deserialize MUST return a new Message instance of the correct
+	//     concrete type for the given protocol/message ID.
 	Serializer interface {
 		Serialize() ([]byte, error)
 		Deserialize(data []byte) (Message, error)
 	}
 )
 
-func SendMessage(msg Message, sendTo net.Host) {
+func SendMessage(msg Message, sendTo net.Host) error {
+	runtime := GetRuntimeInstance()
+	logger := runtime.Logger()
+
 	payload, err := msg.Serializer().Serialize()
 	if err != nil {
-		return
+		logger.Error("failed to serialize message",
+			"protocolID", msg.ProtocolID(),
+			"messageID", msg.MessageID(),
+			"to", sendTo.ToString(),
+			"err", err,
+		)
+		return err
 	}
 
 	buffer := new(bytes.Buffer)
@@ -31,13 +45,29 @@ func SendMessage(msg Message, sendTo net.Host) {
 	protocolID := uint16(msg.ProtocolID())
 	messageID := uint16(msg.MessageID())
 
-	_ = writeUint16(buffer, protocolID)
-	_ = writeUint16(buffer, messageID)
+	if err := writeUint16(buffer, protocolID); err != nil {
+		logger.Error("failed to encode protocolID header",
+			"protocolID", msg.ProtocolID(),
+			"messageID", msg.MessageID(),
+			"to", sendTo.ToString(),
+			"err", err,
+		)
+		return err
+	}
+	if err := writeUint16(buffer, messageID); err != nil {
+		logger.Error("failed to encode messageID header",
+			"protocolID", msg.ProtocolID(),
+			"messageID", msg.MessageID(),
+			"to", sendTo.ToString(),
+			"err", err,
+		)
+		return err
+	}
 
 	buffer.Write(payload)
 
-	runtime := GetRuntimeInstance()
 	runtime.sessionLayer.Send(*buffer, sendTo)
+	return nil
 }
 
 func writeUint16(buf *bytes.Buffer, val uint16) error {

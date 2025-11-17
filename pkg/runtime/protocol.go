@@ -146,7 +146,7 @@ func (c *protocolContext) Disconnect(host net.Host) {
 }
 
 func (c *protocolContext) Send(msg Message, to net.Host) {
-	SendMessage(msg, to)
+	_ = SendMessage(msg, to)
 }
 
 func (c *protocolContext) Self() net.Host {

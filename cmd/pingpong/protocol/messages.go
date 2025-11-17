@@ -87,6 +87,9 @@ func (p *PongMessage) SetSender(h net.Host) {
 	p.sender = h
 }
 
+// PingSerializer implements runtime.Serializer for PingMessage. It follows
+// the contract that Serialize does not mutate the message and Deserialize
+// returns a new PingMessage instance.
 func (p *PingSerializer) Serialize() ([]byte, error) {
 	return nil, nil
 }
@@ -98,6 +101,9 @@ func (p *PingSerializer) Deserialize(data []byte) (runtime.Message, error) {
 	}, nil
 }
 
+// PongSerializer implements runtime.Serializer for PongMessage. It follows
+// the contract that Serialize does not mutate the message and Deserialize
+// returns a new PongMessage instance.
 func (p *PongSerializer) Serialize() ([]byte, error) {
 	return nil, nil
 }

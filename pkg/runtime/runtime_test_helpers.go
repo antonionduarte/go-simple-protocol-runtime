@@ -147,7 +147,7 @@ func (p *IntegrationProtocol) OnSessionConnected(h net.Host) {
 		pid:    p.ProtoID,
 		sender: p.SelfHost,
 	}
-	SendMessage(msg, p.Peer)
+	_ = SendMessage(msg, p.Peer)
 }
 
 func (p *IntegrationProtocol) OnSessionDisconnected(h net.Host) {}

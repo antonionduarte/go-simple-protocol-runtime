@@ -259,11 +259,20 @@ type senderSetter interface {
 func processMessage(buffer bytes.Buffer, from net.Host) {
 	var protocolID, messageID uint16
 	if err := binary.Read(&buffer, binary.LittleEndian, &protocolID); err != nil {
-		// TODO: log error
+		logger := GetRuntimeInstance().Logger()
+		logger.Error("failed to read protocolID from message header",
+			"from", from.ToString(),
+			"err", err,
+		)
 		return
 	}
 	if err := binary.Read(&buffer, binary.LittleEndian, &messageID); err != nil {
-		// TODO: log error
+		logger := GetRuntimeInstance().Logger()
+		logger.Error("failed to read messageID from message header",
+			"from", from.ToString(),
+			"protocolID", protocolID,
+			"err", err,
+		)
 		return
 	}
 
@@ -271,23 +280,35 @@ func processMessage(buffer bytes.Buffer, from net.Host) {
 	logger := runtime.Logger()
 	protocol, exists := runtime.protocols[int(protocolID)]
 	if !exists {
-		// TODO: unknown protocol
-		logger.Warn("received message for unknown protocol", "protocolID", protocolID, "messageID", messageID)
+		// Unknown protocol: log and discard the message, runtime keeps operating.
+		logger.Warn("received message for unknown protocol",
+			"from", from.ToString(),
+			"protocolID", protocolID,
+			"messageID", messageID,
+		)
 		return
 	}
 
 	serializer, ok := protocol.msgSerializers[int(messageID)]
 	if !ok {
-		// TODO: unknown message
-		logger.Warn("received message for unknown messageID", "protocolID", protocolID, "messageID", messageID)
+		// Unknown message ID for a known protocol: log and discard.
+		logger.Warn("received message for unknown messageID",
+			"from", from.ToString(),
+			"protocolID", protocolID,
+			"messageID", messageID,
+		)
 		return
 	}
 
 	// Remaining bytes belong to the message-specific payload.
 	message, err := serializer.Deserialize(buffer.Bytes())
 	if err != nil {
-		// TODO: log error
-		logger.Error("failed to deserialize message", "protocolID", protocolID, "messageID", messageID, "err", err)
+		logger.Error("failed to deserialize message",
+			"from", from.ToString(),
+			"protocolID", protocolID,
+			"messageID", messageID,
+			"err", err,
+		)
 		return
 	}
 
@@ -298,6 +319,10 @@ func processMessage(buffer bytes.Buffer, from net.Host) {
 	}
 
 	// push the message to that protocol's channel
-	logger.Debug("dispatching message", "protocolID", protocolID, "messageID", messageID)
+	logger.Debug("dispatching message",
+		"from", from.ToString(),
+		"protocolID", protocolID,
+		"messageID", messageID,
+	)
 	protocol.messageChannel <- message
 }

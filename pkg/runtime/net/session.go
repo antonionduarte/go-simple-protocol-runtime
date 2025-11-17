@@ -206,11 +206,13 @@ func (s *SessionLayer) transportEventHandler(event TransportEvent) {
 		}
 
 	case *TransportDisconnected:
+		// Map the underlying transport host to the logical Host *before*
+		// cleaning up the serverMappings; otherwise we might lose the
+		// logical identity and only see the ephemeral transport endpoint.
+		h := s.mapToHost(e.host)
 		// Clean up handshake channels or serverMappings as needed
-		// E.g.:
 		_ = s.cleanupOngoingHandshake(e.host)
 		_ = s.cleanupServerMapping(e.host)
-		h := s.mapToHost(e.host)
 		slog.Info("session disconnected", "host", h.ToString())
 		s.outChannelEvents <- &SessionDisconnected{host: h}
 

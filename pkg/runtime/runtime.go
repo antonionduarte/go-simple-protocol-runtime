@@ -4,15 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"io"
 	"log/slog"
-	"os"
 	"sync"
 	"time"
 
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
-
-	log "github.com/sirupsen/logrus"
 )
 
 type Runtime struct {
@@ -25,6 +21,34 @@ type Runtime struct {
 	protocols     map[int]*ProtoProtocol
 	networkLayer  net.TransportLayer
 	sessionLayer  *net.SessionLayer
+
+	// High-level session callbacks are implemented optionally by protocols
+	// via the interfaces below.
+}
+
+// SessionConnectedHandler can be implemented by a protocol that wants to be
+// notified whenever a session is established with some Host.
+type SessionConnectedHandler interface {
+	OnSessionConnected(net.Host)
+}
+
+// SessionDisconnectedHandler can be implemented by a protocol that wants to be
+// notified whenever a session is torn down with some Host.
+type SessionDisconnectedHandler interface {
+	OnSessionDisconnected(net.Host)
+}
+
+// Internal representation of session events delivered to each ProtoProtocol.
+type sessionEventType int
+
+const (
+	sessionConnectedEvent sessionEventType = iota
+	sessionDisconnectedEvent
+)
+
+type sessionEvent struct {
+	kind sessionEventType
+	host net.Host
 }
 
 var (
@@ -54,6 +78,7 @@ func (r *Runtime) Start() {
 
 	r.startProtocols(ctx)
 	r.initProtocols()
+	r.startSessionEvents(ctx)
 
 	r.wg.Add(1)
 	go r.eventHandler(ctx)
@@ -77,25 +102,30 @@ func (r *Runtime) RegisterSessionLayer(sessionLayer *net.SessionLayer) {
 	r.sessionLayer = sessionLayer
 }
 
-// RegisterMessageHandler registers a message handler for a given protocol & message ID.
-func RegisterMessageHandler(protocolID int, messageID int, handler func(Message)) {
+// Connect asks the underlying session layer to establish a session
+// with the given logical host.
+func Connect(host net.Host) {
 	runtime := GetRuntimeInstance()
-	proto := runtime.protocols[protocolID]
-	if proto == nil {
-		return // or panic/log an error
+	if runtime.sessionLayer == nil {
+		panic("Session layer not registered")
 	}
-	proto.RegisterMessageHandler(messageID, handler)
+	runtime.sessionLayer.Connect(host)
 }
 
-// RegisterMessageSerializer registers a message serializer for a given protocol & message ID.
-func RegisterMessageSerializer(protocolID int, messageID int, serializer Serializer) {
+// Disconnect asks the underlying session layer to tear down a session
+// with the given logical host.
+func Disconnect(host net.Host) {
 	runtime := GetRuntimeInstance()
-	proto := runtime.protocols[protocolID]
-	if proto == nil {
-		return // or panic/log an error
+	if runtime.sessionLayer == nil {
+		panic("Session layer not registered")
 	}
-	proto.RegisterMessageSerializer(messageID, serializer)
+	runtime.sessionLayer.Disconnect(host)
 }
+
+// NOTE: Session events are delivered to protocols that implement the
+// SessionConnectedHandler / SessionDisconnectedHandler interfaces. There is
+// no need for explicit registration; protocols simply opt-in by implementing
+// the methods.
 
 // RegisterProtocol registers a protocol to the runtime.
 func (r *Runtime) RegisterProtocol(protocol *ProtoProtocol) {
@@ -157,20 +187,45 @@ func (r *Runtime) initProtocols() {
 	}
 }
 
-// Optionally called from main(), as you prefer
-func (r *Runtime) setupLogger() {
-	currentDate := time.Now().Format("2006-01-02")
-	fileName := currentDate + ".log"
-
-	file, err := os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	if err != nil {
-		log.Fatalf("Failed to open log file: %v", err)
+// startSessionEvents begins a goroutine that listens to session-level
+// events and invokes any registered high-level handlers.
+func (r *Runtime) startSessionEvents(ctx context.Context) {
+	if r.sessionLayer == nil {
+		return
 	}
-	defer file.Close()
 
-	mw := io.MultiWriter(os.Stdout, file)
-	log.SetOutput(mw)
-	log.Info("Logger initialized")
+	r.wg.Add(1)
+	go func() {
+		defer r.wg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case ev := <-r.sessionLayer.OutChannelEvents():
+				switch e := ev.(type) {
+				case *net.SessionConnected:
+					host := e.Host()
+					for _, proto := range r.protocols {
+						// Deliver the event into the protocol's own event loop
+						select {
+						case proto.sessionEvents <- sessionEvent{kind: sessionConnectedEvent, host: host}:
+						case <-ctx.Done():
+							return
+						}
+					}
+				case *net.SessionDisconnected:
+					host := e.Host()
+					for _, proto := range r.protocols {
+						select {
+						case proto.sessionEvents <- sessionEvent{kind: sessionDisconnectedEvent, host: host}:
+						case <-ctx.Done():
+							return
+						}
+					}
+				}
+			}
+		}
+	}()
 }
 
 // senderSetter is implemented by messages that want to be informed

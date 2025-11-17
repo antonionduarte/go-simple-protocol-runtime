@@ -5,19 +5,19 @@ Simple protocol runtime in Go. (heavily inspired by [Babel](https://github.com/p
 ## TODO:
 
 - [X] Implement basic structure.
-- [ ] Implement network layer, for TCP initially. TODO: Had an error, I probably need to do a handshake.
+- [X] Implement network layer, for TCP initially. TODO: Had an error, I probably need to do a handshake.
 - [ ] Implement inter-protocol communication, so that we can send messages between protocols within same Runtime.
-- [ ] Implement a simple protocol, which can send and receive messages to test this.
+- [X] Implement a simple protocol, which can send and receive messages to test this.
 - [X] Implement timer functionality.
 - [ ] Implement configuration file parser.
 - [X] Add contexts **everywhere** in order to gracefully finish the runtime and it's experiments.
 - [X] Decide how I actually want to manage the self Host.
-- [ ] High Priority - Might break everything - Rethink if I save the Host in the Message Structs.
-- [ ] Decide correctly which static functions should be in which file, possibly ask GPT-4 about it his answer will be correct. 
-- [ ] Should the cancelation of the runtime be called at the runtime level or?
-- [ ] Should the network layer be generic by itself and abstract stuff like cancelation?
-- [ ] Some mechanism for the main thread to actually finish execution.
-- [ ] Propper channel management, I believe i'm not actually properly closing channels yet.
+- [X] High Priority - Might break everything - Rethink if I save the Host in the Message Structs.
+- [X] Decide correctly which static functions should be in which file, possibly ask GPT-4 about it his answer will be correct. 
+- [X] Should the cancelation of the runtime be called at the runtime level or?
+- [X] Should the network layer be generic by itself and abstract stuff like cancelation?
+- [X] Some mechanism for the main thread to actually finish execution.
+- [X] Propper channel management, I believe i'm not actually properly closing channels yet.
 
 ```go
 package main
@@ -31,7 +31,51 @@ type ProtoProtocol struct {
 
 func SendMessage(msg Message, sendTo Host) {}
 ```
-- [ ] Consider copying Hosts around as values instead of using references. 
+- [X] Consider copying Hosts around as values instead of using references. 
+
+## How to write a protocol
+
+Protocols implement the `Protocol` interface in `pkg/runtime`:
+
+```go
+type Protocol interface {
+    Start(ctx ProtocolContext)
+    Init(ctx ProtocolContext)
+    ProtocolID() int
+    Self() net.Host
+}
+```
+
+In `Start(ctx)` you register handlers and serializers:
+
+```go
+func (p *MyProtocol) Start(ctx runtime.ProtocolContext) {
+    ctx.RegisterMessageHandler(MyMessageID, p.HandleMyMessage)
+    ctx.RegisterMessageSerializer(MyMessageID, &MySerializer{})
+}
+```
+
+In `Init(ctx)` you perform bootstrap actions (e.g. connect to peers, set timers):
+
+```go
+func (p *MyProtocol) Init(ctx runtime.ProtocolContext) {
+    ctx.Connect(p.peer) // initiate a session to a peer
+}
+```
+
+If your protocol wants to react to session events, it can optionally implement:
+
+```go
+type SessionConnectedHandler interface {
+    OnSessionConnected(net.Host)
+}
+
+type SessionDisconnectedHandler interface {
+    OnSessionDisconnected(net.Host)
+}
+```
+
+The runtime will call these methods from the protocol's own event loop whenever sessions are established or torn down.
 
 ## Net layer:
 
@@ -41,15 +85,39 @@ func SendMessage(msg Message, sendTo Host) {}
 Types of Network / Channel Events:
 
 ```go
-package main 
+// Transport-level events (TCP)
+type TransportEvent interface {
+    Host() Host
+}
 
-func handleOutConnectionDown() {}
-func handleOutConnectionUp() {}
+type TransportConnected struct {
+    host Host
+}
 
-func handleInConnectionDown() {}
-func handleInConnectionUp() {}
+type TransportDisconnected struct {
+    host Host
+}
 
-func handleOutConnectionFailed() {}
+type TransportFailed struct {
+    host Host
+}
+
+// Session-level events (after handshake)
+type SessionEvent interface {
+    Host() Host
+}
+
+type SessionConnected struct {
+    host Host
+}
+
+type SessionDisconnected struct {
+    host Host
+}
+
+type SessionFailed struct {
+    host Host
+}
 ```
 
 I think I want message handler format to be:

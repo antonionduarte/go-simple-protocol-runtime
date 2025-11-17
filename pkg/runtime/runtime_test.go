@@ -15,19 +15,19 @@ type MockProtocol struct {
 	StartCalled bool
 	InitCalled  bool
 	ProtoID     int
-	MockSelf    *net.Host
+	MockSelf    net.Host
 }
 
-func (m *MockProtocol) Start() {
+func (m *MockProtocol) Start(ctx ProtocolContext) {
 	m.StartCalled = true
 }
-func (m *MockProtocol) Init() {
+func (m *MockProtocol) Init(ctx ProtocolContext) {
 	m.InitCalled = true
 }
 func (m *MockProtocol) ProtocolID() int {
 	return m.ProtoID
 }
-func (m *MockProtocol) Self() *net.Host {
+func (m *MockProtocol) Self() net.Host {
 	return m.MockSelf
 }
 
@@ -99,12 +99,11 @@ func TestRegisterProtocol(t *testing.T) {
 	runtime := GetRuntimeInstance()
 
 	// We create a mock protocol
-	mockProtocol := &MockProtocol{ProtoID: 123}
 	testHost := net.NewHost(8080, "127.0.0.1") // net.Host (value)
+	mockProtocol := &MockProtocol{ProtoID: 123, MockSelf: testHost}
 
 	// Wrap in a ProtoProtocol
-	// pass &testHost instead of testHost
-	protoProtocol := NewProtoProtocol(mockProtocol, &testHost)
+	protoProtocol := NewProtoProtocol(mockProtocol, testHost)
 
 	runtime.RegisterProtocol(protoProtocol)
 

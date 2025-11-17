@@ -35,7 +35,8 @@ func SendMessage(msg Message, sendTo Host) {}
 
 ## How to write a protocol
 
-Protocols implement the `Protocol` interface in `pkg/runtime`:
+Protocols implement the `Protocol` interface in `pkg/runtime` and interact
+with the system exclusively through the `ProtocolContext` they are given.
 
 ```go
 type Protocol interface {
@@ -50,6 +51,9 @@ In `Start(ctx)` you register handlers and serializers:
 
 ```go
 func (p *MyProtocol) Start(ctx runtime.ProtocolContext) {
+    p.ctx = ctx             // store context if needed later (e.g. in callbacks)
+    p.logger = ctx.Logger() // protocol-scoped logger
+
     ctx.RegisterMessageHandler(MyMessageID, p.HandleMyMessage)
     ctx.RegisterMessageSerializer(MyMessageID, &MySerializer{})
 }
@@ -61,6 +65,17 @@ In `Init(ctx)` you perform bootstrap actions (e.g. connect to peers, set timers)
 func (p *MyProtocol) Init(ctx runtime.ProtocolContext) {
     ctx.Connect(p.peer) // initiate a session to a peer
 }
+
+Once your protocol is running, use the stored `ctx` inside your callbacks
+to send messages or schedule timers instead of calling `runtime.*`
+functions directly:
+
+```go
+func (p *MyProtocol) HandleMyMessage(msg runtime.Message) {
+    // ...
+    _ = p.ctx.Send(NewMyReply(p.self), p.peer)
+}
+```
 ```
 
 If your protocol wants to react to session events, it can optionally implement:

@@ -5,7 +5,8 @@ import (
 )
 
 type (
-	// Timer represents a logical timer scheduled through the runtime.
+	// Timer represents a logical timer scheduled through the runtime. This is
+	// part of the public API exposed to protocol implementations.
 	// TimerID must be stable and unique for the lifetime of the timer
 	// within the runtime, as it is used as the key in Runtime.ongoingTimers.
 	// Reusing the same TimerID for overlapping timers will cause later

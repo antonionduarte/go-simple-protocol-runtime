@@ -8,7 +8,19 @@ import (
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 )
 
+// Package runtime exposes the core protocol runtime and the primary APIs that
+// protocol implementations interact with. Most user code should depend on the
+// abstract interfaces here (Protocol, ProtocolContext, Message, Serializer,
+// Timer) rather than on the concrete Runtime type or its globals.
+
 type (
+	// ProtocolContext is the main entry point for protocol implementations.
+	// It is provided to Protocol.Start and Protocol.Init and should be used
+	// to register handlers, connect/disconnect from peers, send messages,
+	// access the protocol-scoped logger, and query the local Host identity.
+	//
+	// Protocol authors should prefer using this interface over calling
+	// package-level helpers or touching the Runtime singleton directly.
 	ProtocolContext interface {
 		RegisterMessageHandler(messageID int, handler func(Message))
 		RegisterMessageSerializer(messageID int, serializer Serializer)
@@ -16,13 +28,17 @@ type (
 
 		Connect(host net.Host)
 		Disconnect(host net.Host)
-		Send(msg Message, to net.Host)
+		Send(msg Message, to net.Host) error
 
 		Logger() *slog.Logger
 
 		Self() net.Host
 	}
 
+	// Protocol describes a user protocol that can be hosted by the runtime.
+	// Implementations should use the provided ProtocolContext in Start/Init
+	// to interact with the system instead of depending on concrete runtime
+	// types or globals.
 	Protocol interface {
 		Start(ctx ProtocolContext)
 		Init(ctx ProtocolContext)
@@ -145,8 +161,8 @@ func (c *protocolContext) Disconnect(host net.Host) {
 	Disconnect(host)
 }
 
-func (c *protocolContext) Send(msg Message, to net.Host) {
-	_ = SendMessage(msg, to)
+func (c *protocolContext) Send(msg Message, to net.Host) error {
+	return SendMessage(msg, to)
 }
 
 func (c *protocolContext) Self() net.Host {

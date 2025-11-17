@@ -59,6 +59,11 @@ var (
 	once     sync.Once
 )
 
+// GetRuntimeInstance returns the singleton Runtime for this process.
+// There is intentionally only one Runtime per process; application code
+// and protocol implementations normally do not need to call this directly
+// and should instead work through higher-level APIs (e.g. ApplyConfig,
+// ProtocolContext, and the helpers in this package).
 func ApplyConfig(cfg *rtconfig.Config) *slog.Logger {
 	if cfg == nil {
 		logger := slog.Default()

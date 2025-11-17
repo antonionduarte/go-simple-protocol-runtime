@@ -7,6 +7,9 @@ import (
 )
 
 type (
+	// Message is the minimal interface that all protocol messages must
+	// implement to be sent through the runtime. It is part of the public API
+	// exposed to protocol implementations.
 	Message interface {
 		MessageID() int
 		ProtocolID() int

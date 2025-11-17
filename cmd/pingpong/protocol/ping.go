@@ -18,6 +18,8 @@ type (
 		peer       net.Host
 
 		logger *slog.Logger
+
+		ctx runtime.ProtocolContext
 	}
 )
 
@@ -31,6 +33,7 @@ func NewPingPongProtocol(self *net.Host, peer *net.Host) *PingPongProtocol {
 
 func (p *PingPongProtocol) Start(ctx runtime.ProtocolContext) {
 	p.logger = ctx.Logger()
+	p.ctx = ctx
 
 	ctx.RegisterMessageHandler(PingMessageID, p.HandlePing)
 	ctx.RegisterMessageHandler(PongMessageID, p.HandlePong)
@@ -55,7 +58,7 @@ func (p *PingPongProtocol) OnSessionConnected(h net.Host) {
 	if net.CompareHost(h, p.peer) {
 		peerStr := (&p.peer).ToString()
 		p.logger.Info("session established with peer, sending initial Ping", "peer", peerStr)
-		if err := runtime.SendMessage(NewPingMessage(p.self), p.peer); err != nil {
+		if err := p.ctx.Send(NewPingMessage(p.self), p.peer); err != nil {
 			p.logger.Error("failed to send initial Ping", "peer", peerStr, "err", err)
 		}
 	}
@@ -74,7 +77,7 @@ func (p *PingPongProtocol) HandlePing(msg runtime.Message) {
 	from := ping.Sender()
 	p.logger.Info("Ping received", "from", (&from).ToString())
 
-	if err := runtime.SendMessage(NewPongMessage(p.self), p.peer); err != nil {
+	if err := p.ctx.Send(NewPongMessage(p.self), p.peer); err != nil {
 		p.logger.Error("failed to send Pong", "err", err)
 	}
 }
@@ -85,7 +88,7 @@ func (p *PingPongProtocol) HandlePong(msg runtime.Message) {
 	from := pong.Sender()
 	p.logger.Info("Pong received", "from", (&from).ToString())
 
-	if err := runtime.SendMessage(NewPingMessage(p.self), p.peer); err != nil {
+	if err := p.ctx.Send(NewPingMessage(p.self), p.peer); err != nil {
 		p.logger.Error("failed to send Ping", "err", err)
 	}
 }

@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
@@ -25,6 +26,9 @@ type (
 		Connect(host net.Host)
 		Disconnect(host net.Host)
 		Send(msg Message, to net.Host)
+
+		// Logging helper
+		Logger() *slog.Logger
 
 		// Identity helpers
 		Self() net.Host
@@ -57,6 +61,7 @@ type (
 	protocolContext struct {
 		proto   *ProtoProtocol
 		runtime *Runtime
+		logger  *slog.Logger
 	}
 )
 
@@ -119,9 +124,16 @@ func (p *ProtoProtocol) ensureContext() {
 	if p.ctx != nil {
 		return
 	}
+	runtime := GetRuntimeInstance()
+	baseLogger := runtime.Logger()
 	p.ctx = &protocolContext{
 		proto:   p,
-		runtime: GetRuntimeInstance(),
+		runtime: runtime,
+		logger: baseLogger.With(
+			"component", "protocol",
+			"protocolID", p.ProtocolID(),
+			"self", p.self.ToString(),
+		),
 	}
 }
 
@@ -153,6 +165,10 @@ func (c *protocolContext) Send(msg Message, to net.Host) {
 
 func (c *protocolContext) Self() net.Host {
 	return c.proto.self
+}
+
+func (c *protocolContext) Logger() *slog.Logger {
+	return c.logger
 }
 
 func (p *ProtoProtocol) eventHandler(ctx context.Context, wg *sync.WaitGroup) {

@@ -14,24 +14,26 @@ import (
 func main() {
 	port := flag.Int("port", 5001, "local TCP port")
 	peerPort := flag.Int("peer-port", 5002, "peer TCP port")
+	logLevel := flag.String("log-level", "info", "log level: debug, info, warn, error")
 	flag.Parse()
 
-	// Configure a global structured logger at debug level so we can
-	// see everything that happens in this example.
+	// Configure a global structured logger using the runtime helper.
+	level := runtime.ParseLogLevel(*logLevel)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
+		Level: level,
 	}))
 	slog.SetDefault(logger)
 
 	// get the instance of the protocol runtime
 	instance := runtime.GetRuntimeInstance()
+	instance.SetLogger(logger)
 
 	myself := net.NewHost(*port, "127.0.0.1")
 	peer := net.NewHost(*peerPort, "127.0.0.1")
 
 	selfStr := (&myself).ToString()
 	peerStr := (&peer).ToString()
-	slog.Info("starting pingpong node",
+	logger.Info("starting pingpong node",
 		"role", "node",
 		"self", selfStr,
 		"peer", peerStr,
@@ -43,8 +45,10 @@ func main() {
 
 	// register a network layer, in this case a TCP layer
 	ctx := context.Background()
-	tcp := net.NewTCPLayer(myself, ctx)
-	session := net.NewSessionLayer(tcp, myself, ctx)
+	tcpLogger := logger.With("component", "transport", "transport", "tcp")
+	sessionLogger := logger.With("component", "session")
+	tcp := net.NewTCPLayer(myself, ctx, tcpLogger)
+	session := net.NewSessionLayer(tcp, myself, ctx, sessionLogger)
 	instance.RegisterNetworkLayer(tcp)
 	instance.RegisterSessionLayer(session)
 

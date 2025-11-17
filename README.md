@@ -142,6 +142,41 @@ func Send(msg NetworkMessage, to Host) // NetworkLayer
 func Send(msg TransportMessage, to Host) // TransportLayer
 ```
 
+## Logging
+
+The runtime and its components use Go's `log/slog` package for structured
+logging. There are four main logging layers:
+
+- **runtime**: high-level lifecycle events (starting, stopping, protocol init).
+- **session**: handshake and session events (connect / disconnect / fail).
+- **transport**: TCP-level events (listen, connect, read/write errors).
+- **protocol**: user protocol logs (e.g. \"Ping received\", \"Pong received\").
+
+The `Runtime` holds a base `*slog.Logger`, which you can configure from your
+application:
+
+```go
+logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+    Level: slog.LevelDebug,
+}))
+runtime.GetRuntimeInstance().SetLogger(logger)
+```
+
+Session and transport layers receive component-specific loggers (e.g.
+`logger.With(\"component\", \"session\")`, `logger.With(\"component\", \"transport\")`),
+and `ProtocolContext.Logger()` returns a logger scoped to the protocol:
+
+```go
+func (p *MyProtocol) Start(ctx runtime.ProtocolContext) {
+    log := ctx.Logger()
+    log.Info(\"protocol starting\", \"self\", ctx.Self().ToString())
+    // register handlers...
+}
+```
+
+Example binaries (like `cmd/pingpong`) expose a `-log-level` flag so you can
+easily change the log verbosity when running nodes.
+
 ## Errors we could detect and log:
 
 - [ ] Net layer related errors.

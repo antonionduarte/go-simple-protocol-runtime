@@ -16,6 +16,8 @@ type (
 		protocolID int
 		self       net.Host
 		peer       net.Host
+
+		logger *slog.Logger
 	}
 )
 
@@ -32,6 +34,8 @@ func NewPingPongProtocol(self *net.Host, peer *net.Host) *PingPongProtocol {
 /*----------- Mandatory Methods ----------- */
 
 func (p *PingPongProtocol) Start(ctx runtime.ProtocolContext) {
+	p.logger = ctx.Logger()
+
 	ctx.RegisterMessageHandler(PingMessageID, p.HandlePing)
 	ctx.RegisterMessageHandler(PongMessageID, p.HandlePong)
 
@@ -59,7 +63,7 @@ func (p *PingPongProtocol) Self() net.Host {
 func (p *PingPongProtocol) OnSessionConnected(h net.Host) {
 	if net.CompareHost(h, p.peer) {
 		peerStr := (&p.peer).ToString()
-		slog.Info("session established with peer, sending initial Ping", "peer", peerStr)
+		p.logger.Info("session established with peer, sending initial Ping", "peer", peerStr)
 		runtime.SendMessage(NewPingMessage(p.self), p.peer)
 	}
 }
@@ -69,7 +73,7 @@ func (p *PingPongProtocol) OnSessionConnected(h net.Host) {
 func (p *PingPongProtocol) OnSessionDisconnected(h net.Host) {
 	if net.CompareHost(h, p.peer) {
 		peerStr := (&p.peer).ToString()
-		slog.Warn("session with peer disconnected", "peer", peerStr)
+		p.logger.Warn("session with peer disconnected", "peer", peerStr)
 	}
 }
 
@@ -80,7 +84,7 @@ func (p *PingPongProtocol) HandlePing(msg runtime.Message) {
 	ping := msg.(*PingMessage)
 
 	from := ping.Sender()
-	slog.Info("Ping received", "from", (&from).ToString())
+	p.logger.Info("Ping received", "from", (&from).ToString())
 
 	// Reply with a Pong to the configured peer
 	runtime.SendMessage(NewPongMessage(p.self), p.peer)
@@ -91,7 +95,7 @@ func (p *PingPongProtocol) HandlePong(msg runtime.Message) {
 	pong := msg.(*PongMessage)
 
 	from := pong.Sender()
-	slog.Info("Pong received", "from", (&from).ToString())
+	p.logger.Info("Pong received", "from", (&from).ToString())
 
 	// Send another Ping back to the peer for continuous ping-pong.
 	runtime.SendMessage(NewPingMessage(p.self), p.peer)

@@ -37,6 +37,8 @@ type (
 		ctx        context.Context
 		cancelFunc context.CancelFunc
 
+		logger *slog.Logger
+
 		mu sync.Mutex // guards ongoingHandshakes and serverMappings
 	}
 
@@ -87,8 +89,11 @@ func (s *SessionDisconnected) Host() Host { return s.host }
 func (s *SessionFailed) Host() Host       { return s.host }
 
 // NewSessionLayer constructs and starts the session layer.
-func NewSessionLayer(transport TransportLayer, self Host, ctx context.Context) *SessionLayer {
+func NewSessionLayer(transport TransportLayer, self Host, ctx context.Context, logger *slog.Logger) *SessionLayer {
 	ctx, cancel := context.WithCancel(ctx)
+	if logger == nil {
+		logger = slog.Default()
+	}
 	session := &SessionLayer{
 		self:              self,
 		connectChan:       make(chan Host),
@@ -101,6 +106,7 @@ func NewSessionLayer(transport TransportLayer, self Host, ctx context.Context) *
 		transport:         transport,
 		ctx:               ctx,
 		cancelFunc:        cancel,
+		logger:            logger,
 	}
 	go session.handler(ctx)
 	return session
@@ -119,19 +125,19 @@ func (s *SessionLayer) Cancel() {
 
 // Connect asks the session layer to establish a session with Host.
 func (s *SessionLayer) Connect(host Host) {
-	slog.Debug("session connect requested", "host", host.ToString())
+	s.logger.Debug("session connect requested", "host", host.ToString())
 	s.connectChan <- host
 }
 
 // Disconnect asks the session layer to tear down a session with Host.
 func (s *SessionLayer) Disconnect(host Host) {
-	slog.Debug("session disconnect requested", "host", host.ToString())
+	s.logger.Debug("session disconnect requested", "host", host.ToString())
 	s.disconnectChan <- host
 }
 
 // Send asks the session layer to deliver a message buffer to Host.
 func (s *SessionLayer) Send(msg bytes.Buffer, sendTo Host) {
-	slog.Debug("session send requested", "to", sendTo.ToString(), "bytes", msg.Len())
+	s.logger.Debug("session send requested", "to", sendTo.ToString(), "bytes", msg.Len())
 	s.sendChan <- SessionMessage{Msg: msg, host: sendTo, layer: Application}
 }
 
@@ -194,12 +200,12 @@ func (s *SessionLayer) transportMessageHandler(msg TransportMessage) {
 	switch sessionMsg.layer {
 	case Application:
 		// This is an application-level message from a remote node
-		slog.Debug("session application message received", "from", sessionMsg.host.ToString(), "bytes", sessionMsg.Msg.Len())
+		s.logger.Debug("session application message received", "from", sessionMsg.host.ToString(), "bytes", sessionMsg.Msg.Len())
 		s.outMessages <- sessionMsg
 
 	case Session:
 		// This is a handshake-level message for an ongoing handshake
-		slog.Debug("session handshake message received", "from", msg.Host.ToString(), "bytes", sessionMsg.Msg.Len())
+		s.logger.Debug("session handshake message received", "from", msg.Host.ToString(), "bytes", sessionMsg.Msg.Len())
 		ch, ok := s.getHandshakeChannel(msg.Host)
 		if ok {
 			ch <- HandshakeMessage{sessionMsg: sessionMsg}
@@ -217,7 +223,7 @@ func (s *SessionLayer) transportEventHandler(event TransportEvent) {
 			ch <- HandshakeMessage{event: e}
 		} else {
 			// Otherwise, this is an incoming connection -> act as server side.
-			slog.Info("session inbound transport connected", "host", e.host.ToString())
+			s.logger.Info("session inbound transport connected", "host", e.host.ToString())
 			s.connectServer(e.host)
 		}
 
@@ -229,7 +235,7 @@ func (s *SessionLayer) transportEventHandler(event TransportEvent) {
 		// Clean up handshake channels or serverMappings as needed.
 		_ = s.cleanupOngoingHandshake(e.host)
 		_ = s.cleanupServerMapping(e.host)
-		slog.Info("session disconnected", "host", h.ToString())
+		s.logger.Info("session disconnected", "host", h.ToString())
 		s.outChannelEvents <- &SessionDisconnected{host: h}
 
 	case *TransportFailed:
@@ -241,7 +247,7 @@ func (s *SessionLayer) transportEventHandler(event TransportEvent) {
 			}(ch, e)
 		}
 		h := s.mapToHost(e.Host())
-		slog.Warn("session transport failed", "host", h.ToString())
+		s.logger.Warn("session transport failed", "host", h.ToString())
 		s.outChannelEvents <- &SessionFailed{host: h}
 	}
 }
@@ -257,7 +263,7 @@ func (s *SessionLayer) connectClient(h Host) {
 	s.setHandshakeChannel(h, handshakeChannel)
 
 	// Initiate the actual transport connection
-	slog.Info("session initiating client handshake", "to", h.ToString())
+	s.logger.Info("session initiating client handshake", "to", h.ToString())
 	s.transport.Connect(h)
 
 	// Launch the handshake logic in a goroutine
@@ -269,7 +275,7 @@ func (s *SessionLayer) connectClient(h Host) {
 func (s *SessionLayer) connectServer(h Host) {
 	handshakeChannel := make(chan HandshakeMessage)
 	s.setHandshakeChannel(h, handshakeChannel)
-	slog.Info("session initiating server handshake", "remote", h.ToString())
+	s.logger.Info("session initiating server handshake", "remote", h.ToString())
 	go s.handshakeServer(handshakeChannel, h)
 }
 
@@ -317,7 +323,7 @@ func (s *SessionLayer) handshakeServer(inChan chan HandshakeMessage, h Host) {
 	case serverHostMsg = <-inChan: // blocking until a message arrives
 	}
 	sessionHost := DeserializeHost(serverHostMsg.sessionMsg.Msg)
-	slog.Info("session server received client host", "client", sessionHost.ToString())
+	s.logger.Info("session server received client host", "client", sessionHost.ToString())
 
 	// Send an ACK as a Session-layer message so the client can
 	// recognize it and mark the handshake as successful.
@@ -334,7 +340,7 @@ func (s *SessionLayer) handshakeServer(inChan chan HandshakeMessage, h Host) {
 	s.setServerMapping(h, sessionHost)
 
 	// Notify upper layer
-	slog.Info("session server handshake complete", "client", sessionHost.ToString())
+	s.logger.Info("session server handshake complete", "client", sessionHost.ToString())
 	s.outChannelEvents <- &SessionConnected{host: sessionHost}
 
 	// We are done with this handshake channel.
@@ -353,7 +359,7 @@ func (s *SessionLayer) handshakeClient(inChan chan HandshakeMessage, h Host) {
 	switch reply.event.(type) {
 	case *TransportConnected:
 		// 2) Send our Host
-		slog.Info("session client transport connected, sending host", "remote", h.ToString(), "self", s.self.ToString())
+		s.logger.Info("session client transport connected, sending host", "remote", h.ToString(), "self", s.self.ToString())
 		msg := serializeTransportMessage(SessionMessage{
 			host:  h,       // remote host we're establishing a session with
 			layer: Session, // handshake
@@ -372,7 +378,7 @@ func (s *SessionLayer) handshakeClient(inChan chan HandshakeMessage, h Host) {
 			// We got an ACK, meaning handshake success
 			sessionHost := h
 			s.setServerMapping(h, sessionHost)
-			slog.Info("session client handshake complete", "server", sessionHost.ToString())
+			s.logger.Info("session client handshake complete", "server", sessionHost.ToString())
 			s.outChannelEvents <- &SessionConnected{host: sessionHost}
 		}
 

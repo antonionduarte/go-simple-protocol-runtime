@@ -22,6 +22,8 @@ type Runtime struct {
 	networkLayer  net.TransportLayer
 	sessionLayer  *net.SessionLayer
 
+	logger *slog.Logger
+
 	// High-level session callbacks are implemented optionally by protocols
 	// via the interfaces below.
 }
@@ -59,13 +61,32 @@ var (
 // GetRuntimeInstance creates or returns the singleton instance.
 func GetRuntimeInstance() *Runtime {
 	once.Do(func() {
+		base := slog.Default().With("component", "runtime")
 		instance = &Runtime{
 			msgChannel:   make(chan Message, 1),
 			timerChannel: make(chan Timer, 1),
 			protocols:    make(map[int]*ProtoProtocol),
+			logger:       base,
 		}
 	})
 	return instance
+}
+
+// SetLogger configures the base logger used by the runtime and all
+// derived component loggers (session, transport, protocols).
+func (r *Runtime) SetLogger(logger *slog.Logger) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	r.logger = logger.With("component", "runtime")
+}
+
+// Logger returns the base logger for this Runtime.
+func (r *Runtime) Logger() *slog.Logger {
+	if r.logger == nil {
+		return slog.Default()
+	}
+	return r.logger
 }
 
 // Start starts the instance.
@@ -74,7 +95,7 @@ func (r *Runtime) Start() {
 	ctx, cancel := context.WithCancel(ctx)
 	r.cancelFunc = cancel
 
-	slog.Info("runtime starting")
+	r.Logger().Info("runtime starting")
 
 	r.startProtocols(ctx)
 	r.initProtocols()
@@ -175,14 +196,14 @@ func (r *Runtime) eventHandler(ctx context.Context) {
 
 func (r *Runtime) startProtocols(ctx context.Context) {
 	for _, protocol := range r.protocols {
-		slog.Info("starting protocol", "protocolID", protocol.ProtocolID())
+		r.Logger().Info("starting protocol", "protocolID", protocol.ProtocolID())
 		protocol.Start(ctx, &r.wg)
 	}
 }
 
 func (r *Runtime) initProtocols() {
 	for _, protocol := range r.protocols {
-		slog.Info("initializing protocol", "protocolID", protocol.ProtocolID())
+		r.Logger().Info("initializing protocol", "protocolID", protocol.ProtocolID())
 		protocol.Init()
 	}
 }
@@ -248,17 +269,18 @@ func processMessage(buffer bytes.Buffer, from net.Host) {
 	}
 
 	runtime := GetRuntimeInstance()
+	logger := runtime.Logger()
 	protocol, exists := runtime.protocols[int(protocolID)]
 	if !exists {
 		// TODO: unknown protocol
-		slog.Warn("received message for unknown protocol", "protocolID", protocolID, "messageID", messageID)
+		logger.Warn("received message for unknown protocol", "protocolID", protocolID, "messageID", messageID)
 		return
 	}
 
 	serializer, ok := protocol.msgSerializers[int(messageID)]
 	if !ok {
 		// TODO: unknown message
-		slog.Warn("received message for unknown messageID", "protocolID", protocolID, "messageID", messageID)
+		logger.Warn("received message for unknown messageID", "protocolID", protocolID, "messageID", messageID)
 		return
 	}
 
@@ -266,7 +288,7 @@ func processMessage(buffer bytes.Buffer, from net.Host) {
 	message, err := serializer.Deserialize(buffer.Bytes())
 	if err != nil {
 		// TODO: log error
-		slog.Error("failed to deserialize message", "protocolID", protocolID, "messageID", messageID, "err", err)
+		logger.Error("failed to deserialize message", "protocolID", protocolID, "messageID", messageID, "err", err)
 		return
 	}
 
@@ -277,6 +299,6 @@ func processMessage(buffer bytes.Buffer, from net.Host) {
 	}
 
 	// push the message to that protocol's channel
-	slog.Debug("dispatching message", "protocolID", protocolID, "messageID", messageID)
+	logger.Debug("dispatching message", "protocolID", protocolID, "messageID", messageID)
 	protocol.messageChannel <- message
 }

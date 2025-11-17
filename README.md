@@ -209,9 +209,17 @@ values from the config file.
 
 ## Timers
 
-- SetupTimer()
-- SetupPeriodicTimer()
-- CancelTimer()
+The runtime exposes simple timer helpers that deliver `Timer` objects back
+into the protocol event loops:
+
+- `SetupTimer(timer, duration)` – fires once after `duration`.
+- `SetupPeriodicTimer(timer, duration)` – fires repeatedly every `duration`.
+- `CancelTimer(timerID)` – stops a previously scheduled timer.
+
+Timers are identified by `TimerID()`; this ID is used as a key inside the
+runtime's `ongoingTimers` map and **must be unique for the lifetime of each
+logical timer**. Reusing the same `TimerID` for overlapping timers will cause
+newer timers to overwrite older ones.
 
 ## Serialized Format of Messages
 

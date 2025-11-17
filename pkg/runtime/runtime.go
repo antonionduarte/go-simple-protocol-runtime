@@ -80,10 +80,11 @@ func GetRuntimeInstance() *Runtime {
 	once.Do(func() {
 		base := slog.Default().With("component", "runtime")
 		instance = &Runtime{
-			msgChannel:   make(chan Message, rtconfig.RuntimeMsgTimerBuffer()),
-			timerChannel: make(chan Timer, rtconfig.RuntimeMsgTimerBuffer()),
-			protocols:    make(map[int]*ProtoProtocol),
-			logger:       base,
+			msgChannel:    make(chan Message, rtconfig.RuntimeMsgTimerBuffer()),
+			timerChannel:  make(chan Timer, rtconfig.RuntimeMsgTimerBuffer()),
+			ongoingTimers: make(map[int]*time.Timer),
+			protocols:     make(map[int]*ProtoProtocol),
+			logger:        base,
 		}
 	})
 	return instance
@@ -165,6 +166,16 @@ func (r *Runtime) Cancel() {
 	if r.networkLayer != nil {
 		r.networkLayer.Cancel()
 	}
+	// Stop and clear all timers to avoid callbacks after shutdown.
+	r.timerMutex.Lock()
+	for id, t := range r.ongoingTimers {
+		if t != nil {
+			t.Stop()
+		}
+		delete(r.ongoingTimers, id)
+	}
+	r.timerMutex.Unlock()
+
 	r.wg.Wait()
 	slog.Info("runtime stopped")
 }

@@ -17,10 +17,10 @@ func (f *failingSerializer) Deserialize(data []byte) (Message, error) {
 }
 
 type failingMessage struct {
-	id        int
-	pid       int
+	id         int
+	pid        int
 	serializer Serializer
-	sender    net.Host
+	sender     net.Host
 }
 
 func (m *failingMessage) MessageID() int         { return m.id }
@@ -33,10 +33,10 @@ func TestSendMessage_SerializeError(t *testing.T) {
 	_ = GetRuntimeInstance() // ensure runtime is initialized
 
 	msg := &failingMessage{
-		id:        1,
-		pid:       123,
+		id:         1,
+		pid:        123,
 		serializer: &failingSerializer{},
-		sender:    net.NewHost(0, "127.0.0.1"),
+		sender:     net.NewHost(0, "127.0.0.1"),
 	}
 	to := net.NewHost(8000, "127.0.0.1")
 
@@ -44,5 +44,3 @@ func TestSendMessage_SerializeError(t *testing.T) {
 		t.Fatalf("expected SendMessage to return error when Serialize fails")
 	}
 }
-
-

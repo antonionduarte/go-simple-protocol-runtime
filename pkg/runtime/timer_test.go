@@ -36,5 +36,3 @@ func TestCancelTimerStopsTimer(t *testing.T) {
 		close(done)
 	}
 }
-
-

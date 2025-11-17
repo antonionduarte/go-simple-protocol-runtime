@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	rtconfig "github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/config"
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 )
 
@@ -58,13 +59,33 @@ var (
 	once     sync.Once
 )
 
+// ApplyConfig stores the global configuration, constructs the base logger
+// from it, installs it as the slog default, and attaches it to the Runtime.
+// It returns the configured logger for convenience.
+func ApplyConfig(cfg *rtconfig.Config) *slog.Logger {
+	if cfg == nil {
+		logger := slog.Default()
+		r := GetRuntimeInstance()
+		r.SetLogger(logger)
+		return logger
+	}
+
+	rtconfig.SetGlobalConfig(cfg)
+	logger := NewLoggerFromConfig(cfg.Logging)
+	slog.SetDefault(logger)
+
+	r := GetRuntimeInstance()
+	r.SetLogger(logger)
+	return logger
+}
+
 // GetRuntimeInstance creates or returns the singleton instance.
 func GetRuntimeInstance() *Runtime {
 	once.Do(func() {
 		base := slog.Default().With("component", "runtime")
 		instance = &Runtime{
-			msgChannel:   make(chan Message, 1),
-			timerChannel: make(chan Timer, 1),
+			msgChannel:   make(chan Message, rtconfig.RuntimeMsgTimerBuffer()),
+			timerChannel: make(chan Timer, rtconfig.RuntimeMsgTimerBuffer()),
 			protocols:    make(map[int]*ProtoProtocol),
 			logger:       base,
 		}

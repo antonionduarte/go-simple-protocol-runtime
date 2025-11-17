@@ -32,13 +32,13 @@ func TestSessionLayerSuccessfulHandshake(t *testing.T) {
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	defer cancel2()
 
-	tcp1 := NewTCPLayer(h1, ctx1, nil)
-	tcp2 := NewTCPLayer(h2, ctx2, nil)
+	tcp1 := NewTCPLayer(h1, ctx1)
+	tcp2 := NewTCPLayer(h2, ctx2)
 	defer tcp1.Cancel()
 	defer tcp2.Cancel()
 
-	s1 := NewSessionLayer(tcp1, h1, ctx1, nil)
-	s2 := NewSessionLayer(tcp2, h2, ctx2, nil)
+	s1 := NewSessionLayer(tcp1, h1, ctx1)
+	s2 := NewSessionLayer(tcp2, h2, ctx2)
 
 	// initiate session from h1 to h2
 	s1.Connect(h2)
@@ -69,10 +69,10 @@ func TestSessionLayerFailedConnection(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	tcp := NewTCPLayer(hClient, ctx, nil)
+	tcp := NewTCPLayer(hClient, ctx)
 	defer tcp.Cancel()
 
-	s := NewSessionLayer(tcp, hClient, ctx, nil)
+	s := NewSessionLayer(tcp, hClient, ctx)
 
 	// Connect to a host that has no listener
 	s.Connect(hNoServer)

@@ -174,8 +174,31 @@ func (p *MyProtocol) Start(ctx runtime.ProtocolContext) {
 }
 ```
 
-Example binaries (like `cmd/pingpong`) expose a `-log-level` flag so you can
-easily change the log verbosity when running nodes.
+## Configuration (YAML)
+
+Example applications can be configured via a simple YAML file using the
+`pkg/runtime/config` package. A minimal schema looks like:
+
+```yaml
+logging:
+  level: debug          # debug, info, warn, error
+  components: ["protocol"] # runtime, session, transport, protocol
+  format: text          # text or json
+
+runtime:
+  self:
+    ip: 127.0.0.1
+    port: 5001
+  peer:
+    ip: 127.0.0.1
+    port: 5002
+```
+
+In `cmd/pingpong/main.go` you can pass `-config pingpong.example.yaml` to load
+these settings. The config is used to build the base logger via
+`runtime.NewLoggerFromConfig(cfg.Logging)` and to choose the self/peer hosts.
+If you also provide `-port` / `-peer-port` flags, those ports override the
+values from the config file.
 
 ## Errors we could detect and log:
 

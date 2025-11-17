@@ -1,0 +1,15 @@
+logging:
+  level: debug
+  components: ["protocol"]
+  format: text
+
+runtime:
+  self:
+    ip: 127.0.0.1
+    port: 5001
+  peer:
+    ip: 127.0.0.1
+    port: 5002
+  channelBuffer: 10
+
+

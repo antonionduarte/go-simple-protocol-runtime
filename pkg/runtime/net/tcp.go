@@ -7,6 +7,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	rtconfig "github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/config"
 )
 
 type (
@@ -33,16 +35,20 @@ type (
 )
 
 // NewTCPLayer now expects a context, since it uses goroutines.
-// A logger can be provided; if nil, slog.Default() is used.
-func NewTCPLayer(self Host, ctx context.Context, logger *slog.Logger) *TCPLayer {
+// It derives a component-scoped logger from slog.Default() so that logging
+// configuration is driven centrally (via runtime.ApplyConfig).
+// Buffer sizes for outward-facing channels may be influenced by the global
+// configuration's Runtime.ChannelBuffer, but otherwise fall back to the
+// historical defaults.
+func NewTCPLayer(self Host, ctx context.Context) *TCPLayer {
 	// derive a cancelable context for the TCP layer itself
 	ctx, cancel := context.WithCancel(ctx)
-	if logger == nil {
-		logger = slog.Default()
-	}
+	logger := slog.Default().With("component", "transport", "transport", "tcp")
+	outBuf := rtconfig.TransportOutBuffer()
+
 	tcpLayer := &TCPLayer{
-		outChannel:         make(chan TransportMessage, 10),
-		outTransportEvents: make(chan TransportEvent, 10),
+		outChannel:         make(chan TransportMessage, outBuf),
+		outTransportEvents: make(chan TransportEvent, outBuf),
 		activeConnections:  make(map[Host]net.Conn),
 		sendChan:           make(chan TCPSendMessage),
 		connectChan:        make(chan Host),

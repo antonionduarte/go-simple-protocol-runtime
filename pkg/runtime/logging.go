@@ -3,6 +3,9 @@ package runtime
 import (
 	"context"
 	"log/slog"
+	"os"
+
+	rtconfig "github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/config"
 )
 
 // componentFilterHandler wraps another slog.Handler and only forwards records
@@ -78,4 +81,32 @@ func ParseLogLevel(level string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+// NewLoggerFromConfig constructs a slog.Logger based on a LoggingConfig:
+//   - Level: debug/info/warn/error
+//   - Format: text/json
+//   - Components: optional filter on the \"component\" attribute.
+func NewLoggerFromConfig(cfg rtconfig.LoggingConfig) *slog.Logger {
+	level := ParseLogLevel(cfg.Level)
+
+	var handler slog.Handler
+	switch cfg.Format {
+	case "json":
+		handler = slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+			Level: level,
+		})
+	case "text":
+		fallthrough
+	default:
+		handler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+			Level: level,
+		})
+	}
+
+	if len(cfg.Components) > 0 {
+		handler = NewComponentFilterHandler(handler, cfg.Components)
+	}
+
+	return slog.New(handler)
 }

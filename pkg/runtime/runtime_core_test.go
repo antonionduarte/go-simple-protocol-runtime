@@ -49,7 +49,7 @@ func TestStartAndCancel(t *testing.T) {
 
 	// And a SessionLayer that wraps it (no real traffic in this test).
 	self := net.NewHost(0, "127.0.0.1")
-	session := net.NewSessionLayer(mockNetworkLayer, self, context.Background(), nil)
+	session := net.NewSessionLayer(mockNetworkLayer, self, context.Background())
 	runtime.RegisterSessionLayer(session)
 
 	// Start the runtime.

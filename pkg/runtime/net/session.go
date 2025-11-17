@@ -5,6 +5,8 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+
+	rtconfig "github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/config"
 )
 
 // SessionLayer sits between the runtime and a concrete TransportLayer.
@@ -89,18 +91,22 @@ func (s *SessionDisconnected) Host() Host { return s.host }
 func (s *SessionFailed) Host() Host       { return s.host }
 
 // NewSessionLayer constructs and starts the session layer.
-func NewSessionLayer(transport TransportLayer, self Host, ctx context.Context, logger *slog.Logger) *SessionLayer {
+// Outgoing event/message channel buffer sizes are obtained from the config
+// helpers in pkg/runtime/config; others remain unbuffered. A component-scoped
+// logger is derived from slog.Default() so logging configuration is handled
+// centrally (via runtime.ApplyConfig).
+func NewSessionLayer(transport TransportLayer, self Host, ctx context.Context) *SessionLayer {
 	ctx, cancel := context.WithCancel(ctx)
-	if logger == nil {
-		logger = slog.Default()
-	}
+	logger := slog.Default().With("component", "session")
+	eventsBuf := rtconfig.SessionEventsBuffer()
+	msgsBuf := rtconfig.SessionMessagesBuffer()
 	session := &SessionLayer{
 		self:              self,
 		connectChan:       make(chan Host),
 		disconnectChan:    make(chan Host),
 		sendChan:          make(chan SessionMessage),
-		outChannelEvents:  make(chan SessionEvent),
-		outMessages:       make(chan SessionMessage),
+		outChannelEvents:  make(chan SessionEvent, eventsBuf),
+		outMessages:       make(chan SessionMessage, msgsBuf),
 		serverMappings:    make(map[Host]Host),
 		ongoingHandshakes: make(map[Host]chan HandshakeMessage),
 		transport:         transport,

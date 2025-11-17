@@ -19,8 +19,8 @@ func TestTCPLayerConnection(t *testing.T) {
 	defer firstCancel()
 	defer secondCancel()
 
-	firstNode := NewTCPLayer(first, firstCtx, nil)
-	secondNode := NewTCPLayer(second, secondCtx, nil)
+	firstNode := NewTCPLayer(first, firstCtx)
+	secondNode := NewTCPLayer(second, secondCtx)
 
 	firstNode.Connect(second)
 
@@ -59,8 +59,8 @@ func TestTCPLayerSendMessage(t *testing.T) {
 	defer firstCancel()
 	defer secondCancel()
 
-	firstNode := NewTCPLayer(first, firstCtx, nil)
-	secondNode := NewTCPLayer(second, secondCtx, nil)
+	firstNode := NewTCPLayer(first, firstCtx)
+	secondNode := NewTCPLayer(second, secondCtx)
 
 	firstNode.Connect(second)
 
@@ -113,8 +113,8 @@ func TestDisconnect(t *testing.T) {
 	defer firstCancel()
 	defer secondCancel()
 
-	firstNode := NewTCPLayer(first, firstCtx, nil)
-	secondNode := NewTCPLayer(second, secondCtx, nil)
+	firstNode := NewTCPLayer(first, firstCtx)
+	secondNode := NewTCPLayer(second, secondCtx)
 
 	firstNode.Connect(second)
 

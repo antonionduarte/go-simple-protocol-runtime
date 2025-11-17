@@ -31,14 +31,14 @@ func TestRuntime_EndToEndIntegration(t *testing.T) {
 	defer cancelB()
 
 	// Transport + session for A (owned by runtime)
-	tcpA := net.NewTCPLayer(hostA, ctxA, nil)
-	sessionA := net.NewSessionLayer(tcpA, hostA, ctxA, nil)
+	tcpA := net.NewTCPLayer(hostA, ctxA)
+	sessionA := net.NewSessionLayer(tcpA, hostA, ctxA)
 	runtime.RegisterNetworkLayer(tcpA)
 	runtime.RegisterSessionLayer(sessionA)
 
 	// Transport + session for B (no runtime)
-	tcpB := net.NewTCPLayer(hostB, ctxB, nil)
-	sessionB := net.NewSessionLayer(tcpB, hostB, ctxB, nil)
+	tcpB := net.NewTCPLayer(hostB, ctxB)
+	sessionB := net.NewSessionLayer(tcpB, hostB, ctxB)
 
 	defer tcpB.Cancel()
 

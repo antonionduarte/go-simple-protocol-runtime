@@ -3,33 +3,33 @@ package main
 import (
 	"context"
 	"flag"
-	"log/slog"
-	"os"
 
 	"github.com/antonionduarte/go-simple-protocol-runtime/cmd/pingpong/protocol"
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime"
+	rtconfig "github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/config"
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 )
 
 func main() {
-	port := flag.Int("port", 5001, "local TCP port")
-	peerPort := flag.Int("peer-port", 5002, "peer TCP port")
-	logLevel := flag.String("log-level", "info", "log level: debug, info, warn, error")
+	configPath := flag.String("config", "", "YAML config file (required)")
 	flag.Parse()
 
-	// Configure a global structured logger using the runtime helper.
-	level := runtime.ParseLogLevel(*logLevel)
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: level,
-	}))
-	slog.SetDefault(logger)
+	if *configPath == "" {
+		panic("config file is required (use -config path/to/config.yaml)")
+	}
 
-	// get the instance of the protocol runtime
+	cfg, err := rtconfig.LoadConfig(*configPath)
+	if err != nil {
+		panic(err)
+	}
+
+	// Apply config globally and obtain the configured logger.
+	logger := runtime.ApplyConfig(cfg)
 	instance := runtime.GetRuntimeInstance()
-	instance.SetLogger(logger)
 
-	myself := net.NewHost(*port, "127.0.0.1")
-	peer := net.NewHost(*peerPort, "127.0.0.1")
+	// Determine self/peer directly from config (no defaults here; this is an example).
+	myself := net.NewHost(cfg.Runtime.Self.Port, cfg.Runtime.Self.IP)
+	peer := net.NewHost(cfg.Runtime.Peer.Port, cfg.Runtime.Peer.IP)
 
 	selfStr := (&myself).ToString()
 	peerStr := (&peer).ToString()
@@ -38,17 +38,15 @@ func main() {
 		"self", selfStr,
 		"peer", peerStr,
 	)
+
 	// register the protocol
-	// runtime.RegisterProtocol(NewPingPongProtocol())
 	pingpong := runtime.NewProtoProtocol(protocol.NewPingPongProtocol(&myself, &peer), myself)
 	instance.RegisterProtocol(pingpong)
 
 	// register a network layer, in this case a TCP layer
 	ctx := context.Background()
-	tcpLogger := logger.With("component", "transport", "transport", "tcp")
-	sessionLogger := logger.With("component", "session")
-	tcp := net.NewTCPLayer(myself, ctx, tcpLogger)
-	session := net.NewSessionLayer(tcp, myself, ctx, sessionLogger)
+	tcp := net.NewTCPLayer(myself, ctx)
+	session := net.NewSessionLayer(tcp, myself, ctx)
 	instance.RegisterNetworkLayer(tcp)
 	instance.RegisterSessionLayer(session)
 

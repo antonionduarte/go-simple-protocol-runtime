@@ -77,6 +77,12 @@ type SessionDisconnectedHandler interface {
 
 The runtime will call these methods from the protocol's own event loop whenever sessions are established or torn down.
 
+All protocol callbacks (message handlers, timer handlers, and the optional
+session event handlers) are serialized through a single event loop per
+protocol (`ProtoProtocol.eventHandler`). This means you can usually mutate
+protocol state directly inside your handlers without additional locking,
+as long as all access happens from within those callbacks.
+
 ## Net layer:
 
 - [X] Host struct with serializer and deserializer.

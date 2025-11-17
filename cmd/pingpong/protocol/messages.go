@@ -1,8 +1,6 @@
 package protocol
 
 import (
-	"bytes"
-
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime"
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 )
@@ -95,12 +93,12 @@ func (p *PongMessage) SetSender(h net.Host) {
 
 /*----------- Serializers ----------- */
 
-func (p *PingSerializer) Serialize() (bytes.Buffer, error) {
-	// For now, no payload; return an empty buffer
-	return *bytes.NewBuffer(nil), nil
+func (p *PingSerializer) Serialize() ([]byte, error) {
+	// For now, no payload
+	return nil, nil
 }
 
-func (p *PingSerializer) Deserialize(buffer bytes.Buffer) (runtime.Message, error) {
+func (p *PingSerializer) Deserialize(data []byte) (runtime.Message, error) {
 	// No payload to parse; construct a bare PingMessage
 	// Sender/metadata will typically be set at a higher layer if needed
 	return &PingMessage{
@@ -109,12 +107,12 @@ func (p *PingSerializer) Deserialize(buffer bytes.Buffer) (runtime.Message, erro
 	}, nil
 }
 
-func (p *PongSerializer) Serialize() (bytes.Buffer, error) {
-	// For now, no payload; return an empty buffer
-	return *bytes.NewBuffer(nil), nil
+func (p *PongSerializer) Serialize() ([]byte, error) {
+	// For now, no payload
+	return nil, nil
 }
 
-func (p *PongSerializer) Deserialize(buffer bytes.Buffer) (runtime.Message, error) {
+func (p *PongSerializer) Deserialize(data []byte) (runtime.Message, error) {
 	// No payload to parse; construct a bare PongMessage
 	return &PongMessage{
 		messageID:  PongMessageID,

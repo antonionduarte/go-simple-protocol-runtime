@@ -15,16 +15,20 @@ type (
 		Sender() net.Host
 	}
 
+	// Serializer is responsible for turning concrete messages into a byte
+	// slice and back. The runtime takes care of framing (LayerID,
+	// ProtocolID, MessageID), so serializers only deal with the message
+	// payload.
 	Serializer interface {
-		Serialize() (bytes.Buffer, error)
-		Deserialize(buffer bytes.Buffer) (Message, error)
+		Serialize() ([]byte, error)
+		Deserialize(data []byte) (Message, error)
 	}
 )
 
 // Helper to send a message up the Transport Layer
 func SendMessage(msg Message, sendTo net.Host) {
 	// 1) Serialize the message
-	msgBuffer, err := msg.Serializer().Serialize()
+	payload, err := msg.Serializer().Serialize()
 	if err != nil {
 		// log or handle error
 		return
@@ -41,7 +45,7 @@ func SendMessage(msg Message, sendTo net.Host) {
 	_ = writeUint16(buffer, messageID)
 
 	// Append the actual message payload
-	buffer.Write(msgBuffer.Bytes())
+	buffer.Write(payload)
 
 	// 3) Send the message via the session layer, marking it as an
 	// Application-level message (LayerID is added by the session layer).

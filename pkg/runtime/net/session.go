@@ -7,7 +7,20 @@ import (
 	"sync"
 )
 
-// SessionLayer is intended to abstract connection handshakes at the "session" level.
+// SessionLayer sits between the runtime and a concrete TransportLayer.
+// It is responsible for:
+//   - Performing connection handshakes to associate ephemeral transport
+//     connections with stable logical Hosts.
+//   - Emitting session-level events (connected / disconnected / failed).
+//   - Framing application payloads with a LayerIdentifier so receivers can
+//     distinguish handshake vs. application messages.
+//
+// Concurrency notes:
+//   - Internal goroutines (handler, handshakeClient, handshakeServer) all
+//     interact via channels.
+//   - Shared maps (ongoingHandshakes, serverMappings) are ONLY accessed
+//     through helper methods that acquire the mutex internally so callers
+//     never need to lock around them.
 type (
 	SessionLayer struct {
 		self             Host                // Our own higher-level Host identity
@@ -187,9 +200,7 @@ func (s *SessionLayer) transportMessageHandler(msg TransportMessage) {
 	case Session:
 		// This is a handshake-level message for an ongoing handshake
 		slog.Debug("session handshake message received", "from", msg.Host.ToString(), "bytes", sessionMsg.Msg.Len())
-		s.mu.Lock()
-		ch, ok := s.ongoingHandshakes[msg.Host]
-		s.mu.Unlock()
+		ch, ok := s.getHandshakeChannel(msg.Host)
 		if ok {
 			ch <- HandshakeMessage{sessionMsg: sessionMsg}
 		}
@@ -202,7 +213,7 @@ func (s *SessionLayer) transportEventHandler(event TransportEvent) {
 	case *TransportConnected:
 		// If we already have a handshake channel for this host, we must have
 		// initiated the connection -> notify the client-side handshake.
-		if ch, ok := s.ongoingHandshakes[e.host]; ok {
+		if ch, ok := s.getHandshakeChannel(e.host); ok {
 			ch <- HandshakeMessage{event: e}
 		} else {
 			// Otherwise, this is an incoming connection -> act as server side.
@@ -215,7 +226,7 @@ func (s *SessionLayer) transportEventHandler(event TransportEvent) {
 		// cleaning up the serverMappings; otherwise we might lose the
 		// logical identity and only see the ephemeral transport endpoint.
 		h := s.mapToHost(e.host)
-		// Clean up handshake channels or serverMappings as needed
+		// Clean up handshake channels or serverMappings as needed.
 		_ = s.cleanupOngoingHandshake(e.host)
 		_ = s.cleanupServerMapping(e.host)
 		slog.Info("session disconnected", "host", h.ToString())
@@ -223,14 +234,12 @@ func (s *SessionLayer) transportEventHandler(event TransportEvent) {
 
 	case *TransportFailed:
 		// If there's a handshake in progress, we notify it
-		s.mu.Lock()
-		if ch, ok := s.ongoingHandshakes[e.Host()]; ok {
-			// copy pointer under lock but send outside the lock
+		if ch, ok := s.getHandshakeChannel(e.Host()); ok {
+			// hand the event into the handshake goroutine
 			go func(ch chan HandshakeMessage, ev TransportEvent) {
 				ch <- HandshakeMessage{event: ev}
 			}(ch, e)
 		}
-		s.mu.Unlock()
 		h := s.mapToHost(e.Host())
 		slog.Warn("session transport failed", "host", h.ToString())
 		s.outChannelEvents <- &SessionFailed{host: h}
@@ -245,9 +254,7 @@ func (s *SessionLayer) transportEventHandler(event TransportEvent) {
 func (s *SessionLayer) connectClient(h Host) {
 	// Create a channel for handshake steps
 	handshakeChannel := make(chan HandshakeMessage)
-	s.mu.Lock()
-	s.ongoingHandshakes[h] = handshakeChannel
-	s.mu.Unlock()
+	s.setHandshakeChannel(h, handshakeChannel)
 
 	// Initiate the actual transport connection
 	slog.Info("session initiating client handshake", "to", h.ToString())
@@ -261,9 +268,7 @@ func (s *SessionLayer) connectClient(h Host) {
 // from a remote node (acting as "server" side of handshake).
 func (s *SessionLayer) connectServer(h Host) {
 	handshakeChannel := make(chan HandshakeMessage)
-	s.mu.Lock()
-	s.ongoingHandshakes[h] = handshakeChannel
-	s.mu.Unlock()
+	s.setHandshakeChannel(h, handshakeChannel)
 	slog.Info("session initiating server handshake", "remote", h.ToString())
 	go s.handshakeServer(handshakeChannel, h)
 }
@@ -272,11 +277,9 @@ func (s *SessionLayer) connectServer(h Host) {
 func (s *SessionLayer) disconnect(h Host) {
 	s.transport.Disconnect(h)
 
-	// optionally clean up handshake or server mapping
-	s.mu.Lock()
+	// Optionally clean up handshake or server mapping.
 	_ = s.cleanupOngoingHandshake(h)
 	_ = s.cleanupServerMapping(h)
-	s.mu.Unlock()
 }
 
 // send is called when the user wants to send an application-level message to a Host
@@ -289,18 +292,12 @@ func (s *SessionLayer) send(msg bytes.Buffer, sendTo Host) {
 		Msg:   msg,
 	}
 
-	// Find the underlying Transport host corresponding to this logical Host.
+	// Find the underlying transport host corresponding to this logical Host.
 	// On the client side, sendTo will typically be the same as the
 	// transport host. On the server side, the client may be behind an
 	// ephemeral TCP port, so we look up the mapping learned during
 	// handshake (transportHost -> logicalHost).
-	underlyingHost := sendTo
-	for tHost, logical := range s.serverMappings {
-		if CompareHost(logical, sendTo) {
-			underlyingHost = tHost
-			break
-		}
-	}
+	underlyingHost := s.resolveUnderlyingHost(sendTo)
 
 	transportMsg := serializeTransportMessage(sessionMsg)
 	s.transport.Send(transportMsg, underlyingHost)
@@ -333,8 +330,8 @@ func (s *SessionLayer) handshakeServer(inChan chan HandshakeMessage, h Host) {
 	msg := serializeTransportMessage(ackSession)
 	s.transport.Send(msg, h)
 
-	// You might store that in serverMappings to note we've established a session
-	s.serverMappings[h] = sessionHost
+	// Store that in serverMappings to note we've established a session.
+	s.setServerMapping(h, sessionHost)
 
 	// Notify upper layer
 	slog.Info("session server handshake complete", "client", sessionHost.ToString())
@@ -374,7 +371,7 @@ func (s *SessionLayer) handshakeClient(inChan chan HandshakeMessage, h Host) {
 		if reply2.sessionMsg.Msg.Len() > 0 && reply2.sessionMsg.Msg.Bytes()[0] == 0x01 {
 			// We got an ACK, meaning handshake success
 			sessionHost := h
-			s.serverMappings[h] = sessionHost
+			s.setServerMapping(h, sessionHost)
 			slog.Info("session client handshake complete", "server", sessionHost.ToString())
 			s.outChannelEvents <- &SessionConnected{host: sessionHost}
 		}
@@ -390,6 +387,23 @@ func (s *SessionLayer) handshakeClient(inChan chan HandshakeMessage, h Host) {
    Helpers: cleanup, mapping, serialization
    ----------------------------------------------------------------------- */
 
+// setHandshakeChannel records the handshake channel for a given transport Host.
+// Safe for concurrent use.
+func (s *SessionLayer) setHandshakeChannel(h Host, ch chan HandshakeMessage) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ongoingHandshakes[h] = ch
+}
+
+// getHandshakeChannel retrieves the handshake channel for a given transport Host.
+// Safe for concurrent use.
+func (s *SessionLayer) getHandshakeChannel(h Host) (chan HandshakeMessage, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ch, ok := s.ongoingHandshakes[h]
+	return ch, ok
+}
+
 // cleanupOngoingHandshake removes the handshake channel for tHost
 func (s *SessionLayer) cleanupOngoingHandshake(h Host) bool {
 	s.mu.Lock()
@@ -401,6 +415,14 @@ func (s *SessionLayer) cleanupOngoingHandshake(h Host) bool {
 	return false
 }
 
+// setServerMapping records a mapping from a transport Host to a logical Host.
+// Safe for concurrent use.
+func (s *SessionLayer) setServerMapping(transport Host, logical Host) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.serverMappings[transport] = logical
+}
+
 // cleanupServerMapping removes the serverMapping for tHost
 func (s *SessionLayer) cleanupServerMapping(h Host) bool {
 	s.mu.Lock()
@@ -410,6 +432,22 @@ func (s *SessionLayer) cleanupServerMapping(h Host) bool {
 		return true
 	}
 	return false
+}
+
+// resolveUnderlyingHost returns the transport Host corresponding to a logical
+// Host, if known, or the logical host itself as a fallback. Safe for concurrent use.
+func (s *SessionLayer) resolveUnderlyingHost(sendTo Host) Host {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	underlyingHost := sendTo
+	for tHost, logical := range s.serverMappings {
+		if CompareHost(logical, sendTo) {
+			underlyingHost = tHost
+			break
+		}
+	}
+	return underlyingHost
 }
 
 // mapToHost returns the Host from serverMappings if present, or a fallback

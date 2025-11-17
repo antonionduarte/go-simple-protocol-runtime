@@ -262,7 +262,8 @@ func processMessage(buffer bytes.Buffer, from net.Host) {
 		return
 	}
 
-	message, err := serializer.Deserialize(buffer)
+	// Remaining bytes belong to the message-specific payload.
+	message, err := serializer.Deserialize(buffer.Bytes())
 	if err != nil {
 		// TODO: log error
 		slog.Error("failed to deserialize message", "protocolID", protocolID, "messageID", messageID, "err", err)

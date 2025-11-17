@@ -9,8 +9,12 @@ import (
 
 type (
 	// ProtocolContext is the environment visible to a protocol during
-	// Start/Init. It is used to register handlers and interact with the
-	// underlying runtime/network stack.
+	// Start/Init. It is used primarily to register handlers and perform
+	// bootstrap actions (connect to peers, set timers, send initial messages).
+	// Once Start/Init complete, protocol callbacks (message handlers, timer
+	// handlers, session events) run on a single goroutine per protocol
+	// (ProtoProtocol.eventHandler), so protocol state can usually be mutated
+	// without extra locking as long as you stay inside those callbacks.
 	ProtocolContext interface {
 		// Registration helpers
 		RegisterMessageHandler(messageID int, handler func(Message))

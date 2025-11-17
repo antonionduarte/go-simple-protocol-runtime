@@ -59,9 +59,6 @@ var (
 	once     sync.Once
 )
 
-// ApplyConfig stores the global configuration, constructs the base logger
-// from it, installs it as the slog default, and attaches it to the Runtime.
-// It returns the configured logger for convenience.
 func ApplyConfig(cfg *rtconfig.Config) *slog.Logger {
 	if cfg == nil {
 		logger := slog.Default()
@@ -79,7 +76,6 @@ func ApplyConfig(cfg *rtconfig.Config) *slog.Logger {
 	return logger
 }
 
-// GetRuntimeInstance creates or returns the singleton instance.
 func GetRuntimeInstance() *Runtime {
 	once.Do(func() {
 		base := slog.Default().With("component", "runtime")
@@ -93,8 +89,6 @@ func GetRuntimeInstance() *Runtime {
 	return instance
 }
 
-// SetLogger configures the base logger used by the runtime and all
-// derived component loggers (session, transport, protocols).
 func (r *Runtime) SetLogger(logger *slog.Logger) {
 	if logger == nil {
 		logger = slog.Default()
@@ -102,7 +96,6 @@ func (r *Runtime) SetLogger(logger *slog.Logger) {
 	r.logger = logger.With("component", "runtime")
 }
 
-// Logger returns the base logger for this Runtime.
 func (r *Runtime) Logger() *slog.Logger {
 	if r.logger == nil {
 		return slog.Default()
@@ -110,7 +103,6 @@ func (r *Runtime) Logger() *slog.Logger {
 	return r.logger
 }
 
-// Start starts the instance.
 func (r *Runtime) Start() {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
@@ -126,7 +118,6 @@ func (r *Runtime) Start() {
 	go r.eventHandler(ctx)
 }
 
-// StartWithDuration starts the runtime instance, and runs it until a specified amount of time has passed.
 func (r *Runtime) StartWithDuration(duration time.Duration) {
 	r.Start()
 	time.AfterFunc(duration, func() {
@@ -134,18 +125,14 @@ func (r *Runtime) StartWithDuration(duration time.Duration) {
 	})
 }
 
-// RegisterNetworkLayer registers the network layer that this runtime will use.
 func (r *Runtime) RegisterNetworkLayer(networkLayer net.TransportLayer) {
 	r.networkLayer = networkLayer
 }
 
-// RegisterSessionLayer registers the session layer that this runtime will use.
 func (r *Runtime) RegisterSessionLayer(sessionLayer *net.SessionLayer) {
 	r.sessionLayer = sessionLayer
 }
 
-// Connect asks the underlying session layer to establish a session
-// with the given logical host.
 func Connect(host net.Host) {
 	runtime := GetRuntimeInstance()
 	if runtime.sessionLayer == nil {
@@ -154,8 +141,6 @@ func Connect(host net.Host) {
 	runtime.sessionLayer.Connect(host)
 }
 
-// Disconnect asks the underlying session layer to tear down a session
-// with the given logical host.
 func Disconnect(host net.Host) {
 	runtime := GetRuntimeInstance()
 	if runtime.sessionLayer == nil {
@@ -164,38 +149,26 @@ func Disconnect(host net.Host) {
 	runtime.sessionLayer.Disconnect(host)
 }
 
-// NOTE: Session events are delivered to protocols that implement the
-// SessionConnectedHandler / SessionDisconnectedHandler interfaces. There is
-// no need for explicit registration; protocols simply opt-in by implementing
-// the methods.
-
-// RegisterProtocol registers a protocol to the runtime.
 func (r *Runtime) RegisterProtocol(protocol *ProtoProtocol) {
 	r.protocols[protocol.ProtocolID()] = protocol
 }
 
-// GetProtocol returns a protocol from the instance.
 func (r *Runtime) GetProtocol(protocolID int) *ProtoProtocol {
 	return r.protocols[protocolID]
 }
 
-// Cancel gracefully stops the runtime.
 func (r *Runtime) Cancel() {
-	// Cancel protocols
 	r.cancelFunc()
-	// Also cancel the network/session layers if present
 	if r.sessionLayer != nil {
 		r.sessionLayer.Cancel()
 	}
 	if r.networkLayer != nil {
 		r.networkLayer.Cancel()
 	}
-	// Wait for all goroutines
 	r.wg.Wait()
 	slog.Info("runtime stopped")
 }
 
-// The central event loop
 func (r *Runtime) eventHandler(ctx context.Context) {
 	defer r.wg.Done()
 	for {
@@ -229,8 +202,6 @@ func (r *Runtime) initProtocols() {
 	}
 }
 
-// startSessionEvents begins a goroutine that listens to session-level
-// events and invokes any registered high-level handlers.
 func (r *Runtime) startSessionEvents(ctx context.Context) {
 	if r.sessionLayer == nil {
 		return
@@ -270,14 +241,10 @@ func (r *Runtime) startSessionEvents(ctx context.Context) {
 	}()
 }
 
-// senderSetter is implemented by messages that want to be informed
-// about the remote Host that sent them.
 type senderSetter interface {
 	SetSender(net.Host)
 }
 
-// processMessage reads protocolID + messageID from the buffer and dispatches to the correct serializer.
-// The buffer is expected to start with [ProtocolID(uint16) || MessageID(uint16) || Payload...].
 func processMessage(buffer bytes.Buffer, from net.Host) {
 	var protocolID, messageID uint16
 	if err := binary.Read(&buffer, binary.LittleEndian, &protocolID); err != nil {

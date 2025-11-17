@@ -9,14 +9,6 @@ import (
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 )
 
-/* ------------------------------------------------------------------
-   Integration-style end-to-end test (runtime + session + TCP)
-   ------------------------------------------------------------------ */
-
-// TestRuntime_EndToEndIntegration sets up a runtime with real TCPLayer and
-// SessionLayer, plus a remote SessionLayer, and verifies that when the
-// protocol sends a message on OnSessionConnected, the remote side receives
-// an application-level SessionMessage with the expected protocol/message IDs.
 func TestRuntime_EndToEndIntegration(t *testing.T) {
 	resetRuntimeForTests()
 	runtime := GetRuntimeInstance()

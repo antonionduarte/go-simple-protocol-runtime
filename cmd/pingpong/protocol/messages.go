@@ -47,8 +47,6 @@ func NewPongMessage(sender net.Host) *PongMessage {
 	}
 }
 
-/*----------- Mandatory Methods ----------- */
-
 func (p *PingMessage) MessageID() int {
 	return p.messageID
 }
@@ -65,7 +63,6 @@ func (p *PingMessage) Serializer() runtime.Serializer {
 	return p.serializer
 }
 
-// SetSender allows the runtime to inject the remote host that sent this message.
 func (p *PingMessage) SetSender(h net.Host) {
 	p.sender = h
 }
@@ -86,21 +83,15 @@ func (p *PongMessage) Serializer() runtime.Serializer {
 	return p.serializer
 }
 
-// SetSender allows the runtime to inject the remote host that sent this message.
 func (p *PongMessage) SetSender(h net.Host) {
 	p.sender = h
 }
 
-/*----------- Serializers ----------- */
-
 func (p *PingSerializer) Serialize() ([]byte, error) {
-	// For now, no payload
 	return nil, nil
 }
 
 func (p *PingSerializer) Deserialize(data []byte) (runtime.Message, error) {
-	// No payload to parse; construct a bare PingMessage
-	// Sender/metadata will typically be set at a higher layer if needed
 	return &PingMessage{
 		messageID:  PingMessageID,
 		protocolID: PingPongProtocolId,
@@ -108,12 +99,10 @@ func (p *PingSerializer) Deserialize(data []byte) (runtime.Message, error) {
 }
 
 func (p *PongSerializer) Serialize() ([]byte, error) {
-	// For now, no payload
 	return nil, nil
 }
 
 func (p *PongSerializer) Deserialize(data []byte) (runtime.Message, error) {
-	// No payload to parse; construct a bare PongMessage
 	return &PongMessage{
 		messageID:  PongMessageID,
 		protocolID: PingPongProtocolId,

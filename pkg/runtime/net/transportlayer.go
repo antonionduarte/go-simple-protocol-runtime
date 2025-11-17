@@ -2,7 +2,6 @@ package net
 
 import "bytes"
 
-// TransportLayer is the interface for the underlying network.
 type TransportLayer interface {
 	Connect(host Host)
 	Disconnect(host Host)
@@ -11,7 +10,6 @@ type TransportLayer interface {
 	OutChannel() chan TransportMessage
 	OutTransportEvents() chan TransportEvent
 
-	// Added Cancel() so runtime can call it
 	Cancel()
 }
 

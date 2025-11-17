@@ -41,29 +41,19 @@ type Config struct {
 	Runtime RuntimeConfig `yaml:"runtime"`
 }
 
-// global holds the process-wide configuration, if set. This is intended
-// for example binaries and the Runtime singleton; protocols should not
-// reach for it directly.
 var global *Config
 
-// SetGlobalConfig stores the process-wide configuration.
 func SetGlobalConfig(cfg *Config) {
 	global = cfg
 }
 
-// GlobalConfig returns the stored process-wide configuration, or nil if
-// none has been set.
 func GlobalConfig() *Config {
 	return global
 }
 
-// ---- Helpers for defaults -------------------------------------------------
-
 const (
-	// Default buffer sizes used when no override is provided via config.
 	defaultRuntimeMsgTimerBuffer = 1
 	defaultTransportOutBuffer    = 10
-	// Session events/messages are unbuffered by default.
 	defaultSessionEventsBuffer   = 0
 	defaultSessionMessagesBuffer = 0
 )

@@ -21,8 +21,6 @@ type (
 	}
 )
 
-/*----------- Constructor ----------- */
-
 func NewPingPongProtocol(self *net.Host, peer *net.Host) *PingPongProtocol {
 	return &PingPongProtocol{
 		protocolID: PingPongProtocolId,
@@ -30,8 +28,6 @@ func NewPingPongProtocol(self *net.Host, peer *net.Host) *PingPongProtocol {
 		peer:       *peer,
 	}
 }
-
-/*----------- Mandatory Methods ----------- */
 
 func (p *PingPongProtocol) Start(ctx runtime.ProtocolContext) {
 	p.logger = ctx.Logger()
@@ -44,7 +40,6 @@ func (p *PingPongProtocol) Start(ctx runtime.ProtocolContext) {
 }
 
 func (p *PingPongProtocol) Init(ctx runtime.ProtocolContext) {
-	// Ask the runtime/session layer to initiate the connection to our peer.
 	ctx.Connect(p.peer)
 }
 
@@ -56,10 +51,6 @@ func (p *PingPongProtocol) Self() net.Host {
 	return p.self
 }
 
-/*----------- Session Event Handlers (optional) ----------- */
-
-// OnSessionConnected is called by the runtime when a session is
-// established with some Host. We use it to trigger the initial Ping.
 func (p *PingPongProtocol) OnSessionConnected(h net.Host) {
 	if net.CompareHost(h, p.peer) {
 		peerStr := (&p.peer).ToString()
@@ -68,8 +59,6 @@ func (p *PingPongProtocol) OnSessionConnected(h net.Host) {
 	}
 }
 
-// OnSessionDisconnected is called by the runtime when a session is
-// torn down with some Host. For now we just log.
 func (p *PingPongProtocol) OnSessionDisconnected(h net.Host) {
 	if net.CompareHost(h, p.peer) {
 		peerStr := (&p.peer).ToString()
@@ -77,28 +66,20 @@ func (p *PingPongProtocol) OnSessionDisconnected(h net.Host) {
 	}
 }
 
-/*----------- Message Handlers ----------- */
-
 func (p *PingPongProtocol) HandlePing(msg runtime.Message) {
-	// when accessing the message, you need to cast it to the correct type
 	ping := msg.(*PingMessage)
 
 	from := ping.Sender()
 	p.logger.Info("Ping received", "from", (&from).ToString())
 
-	// Reply with a Pong to the configured peer
 	runtime.SendMessage(NewPongMessage(p.self), p.peer)
 }
 
 func (p *PingPongProtocol) HandlePong(msg runtime.Message) {
-	// when accessing the message, you need to cast it to the correct type
 	pong := msg.(*PongMessage)
 
 	from := pong.Sender()
 	p.logger.Info("Pong received", "from", (&from).ToString())
 
-	// Send another Ping back to the peer for continuous ping-pong.
 	runtime.SendMessage(NewPingMessage(p.self), p.peer)
 }
-
-/*----------- Timer Handlers ----------- */

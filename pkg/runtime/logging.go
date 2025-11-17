@@ -8,16 +8,11 @@ import (
 	rtconfig "github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/config"
 )
 
-// componentFilterHandler wraps another slog.Handler and only forwards records
-// whose "component" attribute is in the allowed set.
 type componentFilterHandler struct {
 	next    slog.Handler
 	allowed map[string]struct{}
 }
 
-// NewComponentFilterHandler creates a handler that drops all log records whose
-// "component" attr is not one of the provided values. Records without a
-// "component" attr are also dropped.
 func NewComponentFilterHandler(next slog.Handler, allowedComponents []string) slog.Handler {
 	allowed := make(map[string]struct{}, len(allowedComponents))
 	for _, c := range allowedComponents {
@@ -42,7 +37,6 @@ func (h *componentFilterHandler) Handle(ctx context.Context, r slog.Record) erro
 					keep = true
 				}
 			}
-			// stop iteration once we inspect the component attr
 			return false
 		}
 		return true
@@ -67,7 +61,6 @@ func (h *componentFilterHandler) WithGroup(name string) slog.Handler {
 	}
 }
 
-// ParseLogLevel converts a string into a slog.Level. Unknown values default to info.
 func ParseLogLevel(level string) slog.Level {
 	switch level {
 	case "debug":
@@ -83,10 +76,6 @@ func ParseLogLevel(level string) slog.Level {
 	}
 }
 
-// NewLoggerFromConfig constructs a slog.Logger based on a LoggingConfig:
-//   - Level: debug/info/warn/error
-//   - Format: text/json
-//   - Components: optional filter on the \"component\" attribute.
 func NewLoggerFromConfig(cfg rtconfig.LoggingConfig) *slog.Logger {
 	level := ParseLogLevel(cfg.Level)
 

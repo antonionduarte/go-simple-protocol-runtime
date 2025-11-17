@@ -34,14 +34,7 @@ type (
 	}
 )
 
-// NewTCPLayer now expects a context, since it uses goroutines.
-// It derives a component-scoped logger from slog.Default() so that logging
-// configuration is driven centrally (via runtime.ApplyConfig).
-// Buffer sizes for outward-facing channels may be influenced by the global
-// configuration's Runtime.ChannelBuffer, but otherwise fall back to the
-// historical defaults.
 func NewTCPLayer(self Host, ctx context.Context) *TCPLayer {
-	// derive a cancelable context for the TCP layer itself
 	ctx, cancel := context.WithCancel(ctx)
 	logger := slog.Default().With("component", "transport", "transport", "tcp")
 	outBuf := rtconfig.TransportOutBuffer()
@@ -88,15 +81,11 @@ func (t *TCPLayer) OutTransportEvents() chan TransportEvent {
 	return t.outTransportEvents
 }
 
-// Cancel implements TransportLayer.Cancel()
 func (t *TCPLayer) Cancel() {
-	// Cancel the context so goroutines can clean up
 	t.cancelFunc()
-	// Optionally close channels
 	close(t.sendChan)
 	close(t.connectChan)
 	close(t.disconnectChan)
-	// You might also want to forcibly close any open connections:
 	t.mutex.Lock()
 	for host, conn := range t.activeConnections {
 		_ = conn.Close()
@@ -198,23 +187,17 @@ func (t *TCPLayer) connectionHandler(conn net.Conn, host Host) {
 			_ = conn.Close()
 			return
 		default:
-			// set read deadline to avoid blocking forever
 			_ = conn.SetReadDeadline(time.Now().Add(time.Second))
 
 			n, err := conn.Read(buf)
 			if err != nil {
 				if ne, ok := err.(net.Error); ok && ne.Timeout() {
-					// just a timeout, continue
 					continue
 				}
-				// real error -> disconnect
 				t.logger.Error("tcp read error, disconnecting", "host", host.ToString(), "err", err)
 				t.disconnect(host)
 				return
 			}
-			// push upward
-			// Copy the bytes into a new slice so that subsequent reads
-			// on buf do not race with readers of this TransportMessage.
 			data := make([]byte, n)
 			copy(data, buf[:n])
 			t.outChannel <- TransportMessage{

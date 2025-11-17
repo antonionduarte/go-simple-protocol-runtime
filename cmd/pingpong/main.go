@@ -23,11 +23,9 @@ func main() {
 		panic(err)
 	}
 
-	// Apply config globally and obtain the configured logger.
 	logger := runtime.ApplyConfig(cfg)
 	instance := runtime.GetRuntimeInstance()
 
-	// Determine self/peer directly from config (no defaults here; this is an example).
 	myself := net.NewHost(cfg.Runtime.Self.Port, cfg.Runtime.Self.IP)
 	peer := net.NewHost(cfg.Runtime.Peer.Port, cfg.Runtime.Peer.IP)
 
@@ -39,20 +37,16 @@ func main() {
 		"peer", peerStr,
 	)
 
-	// register the protocol
 	pingpong := runtime.NewProtoProtocol(protocol.NewPingPongProtocol(&myself, &peer), myself)
 	instance.RegisterProtocol(pingpong)
 
-	// register a network layer, in this case a TCP layer
 	ctx := context.Background()
 	tcp := net.NewTCPLayer(myself, ctx)
 	session := net.NewSessionLayer(tcp, myself, ctx)
 	instance.RegisterNetworkLayer(tcp)
 	instance.RegisterSessionLayer(session)
 
-	// start the protocol runtime
 	instance.Start()
 
-	// Block main so the process does not exit immediately; terminate with Ctrl+C.
 	select {}
 }

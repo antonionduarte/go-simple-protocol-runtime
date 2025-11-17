@@ -100,6 +100,52 @@ func TestTCPLayerSendMessage(t *testing.T) {
 	}
 }
 
+// TestTCPLayerFramingMultipleMessages ensures that multiple messages sent back-to-back
+// are correctly framed and delivered as distinct TransportMessages on the receiver.
+func TestTCPLayerFramingMultipleMessages(t *testing.T) {
+	first := NewHost(7601, "127.0.0.1")
+	second := NewHost(7602, "127.0.0.1")
+
+	firstCtx, firstCancel := context.WithCancel(context.Background())
+	secondCtx, secondCancel := context.WithCancel(context.Background())
+	defer firstCancel()
+	defer secondCancel()
+
+	firstNode := NewTCPLayer(first, firstCtx)
+	secondNode := NewTCPLayer(second, secondCtx)
+
+	firstNode.Connect(second)
+
+	connectCount := 0
+	for {
+		if connectCount == 2 {
+			break
+		}
+		select {
+		case <-secondNode.OutTransportEvents():
+			connectCount++
+		case <-firstNode.OutTransportEvents():
+			connectCount++
+		}
+	}
+
+	msg1 := NewTransportMessage(*bytes.NewBuffer([]byte("msg1")), firstNode.self)
+	msg2 := NewTransportMessage(*bytes.NewBuffer([]byte("msg2")), firstNode.self)
+
+	firstNode.send(msg1, secondNode.self)
+	firstNode.send(msg2, secondNode.self)
+
+	rcv1 := <-secondNode.OutChannel()
+	rcv2 := <-secondNode.OutChannel()
+
+	if got := rcv1.Msg.String(); got != "msg1" {
+		t.Fatalf("first received message mismatch: got %q, want %q", got, "msg1")
+	}
+	if got := rcv2.Msg.String(); got != "msg2" {
+		t.Fatalf("second received message mismatch: got %q, want %q", got, "msg2")
+	}
+}
+
 func TestDisconnect(t *testing.T) {
 	first := NewHost(6913, "127.0.0.1")
 	second := NewHost(6912, "127.0.0.1")

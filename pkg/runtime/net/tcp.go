@@ -3,6 +3,8 @@ package net
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
+	"fmt"
 	"log/slog"
 	"net"
 	"sync"
@@ -33,6 +35,60 @@ type (
 		msg  TransportMessage
 	}
 )
+
+// maxFrameSize is a safety limit for a single TCP frame payload.
+// Frames with a declared length larger than this are treated as protocol errors.
+const maxFrameSize uint32 = 16 * 1024 * 1024 // 16MiB
+
+// encodeFrame wraps a payload with a 4-byte big-endian length prefix.
+// Frame format: [length(uint32 BE) || payload].
+func encodeFrame(payload []byte) ([]byte, error) {
+	if len(payload) == 0 {
+		// Allow empty payloads, but still send a 0-length frame.
+	}
+	if len(payload) > int(^uint32(0)) {
+		return nil, fmt.Errorf("payload too large: %d bytes", len(payload))
+	}
+
+	buf := make([]byte, 4+len(payload))
+	binary.BigEndian.PutUint32(buf[:4], uint32(len(payload)))
+	copy(buf[4:], payload)
+	return buf, nil
+}
+
+// decodeFrames consumes as many complete frames as possible from buf and returns
+// a slice of payload byte slices. The consumed bytes are removed from buf.
+// If an invalid length is found (e.g. exceeds maxFrameSize), an error is returned.
+func decodeFrames(buf *bytes.Buffer) ([][]byte, error) {
+	var frames [][]byte
+	for {
+		// Need at least 4 bytes for the length prefix.
+		if buf.Len() < 4 {
+			return frames, nil
+		}
+
+		header := buf.Bytes()
+		length := binary.BigEndian.Uint32(header[:4])
+		if length > maxFrameSize {
+			return nil, fmt.Errorf("frame length %d exceeds maxFrameSize %d", length, maxFrameSize)
+		}
+
+		// Wait until the full frame is available.
+		if buf.Len() < int(4+length) {
+			return frames, nil
+		}
+
+		// Consume header.
+		_ = buf.Next(4)
+
+		// Consume payload.
+		payload := buf.Next(int(length))
+		// Make a copy to decouple from the underlying buffer.
+		cpy := make([]byte, len(payload))
+		copy(cpy, payload)
+		frames = append(frames, cpy)
+	}
+}
 
 func NewTCPLayer(self Host, ctx context.Context) *TCPLayer {
 	ctx, cancel := context.WithCancel(ctx)
@@ -100,7 +156,15 @@ func (t *TCPLayer) send(networkMessage TransportMessage, sendTo Host) {
 		// no active connection
 		return
 	}
-	if _, err := conn.Write(networkMessage.Msg.Bytes()); err != nil {
+	frame, err := encodeFrame(networkMessage.Msg.Bytes())
+	if err != nil {
+		t.logger.Error("tcp encode frame failed", "host", sendTo.ToString(), "err", err)
+		t.outTransportEvents <- &TransportFailed{host: sendTo}
+		t.Disconnect(sendTo)
+		return
+	}
+
+	if _, err := conn.Write(frame); err != nil {
 		t.outTransportEvents <- &TransportFailed{host: sendTo}
 		t.Disconnect(sendTo)
 	}
@@ -180,7 +244,8 @@ func (t *TCPLayer) listenerHandler(listener net.Listener) {
 }
 
 func (t *TCPLayer) connectionHandler(conn net.Conn, host Host) {
-	buf := make([]byte, 4096)
+	readBuf := make([]byte, 4096)
+	recvBuf := bytes.NewBuffer(nil)
 	for {
 		select {
 		case <-t.ctx.Done():
@@ -189,7 +254,7 @@ func (t *TCPLayer) connectionHandler(conn net.Conn, host Host) {
 		default:
 			_ = conn.SetReadDeadline(time.Now().Add(time.Second))
 
-			n, err := conn.Read(buf)
+			n, err := conn.Read(readBuf)
 			if err != nil {
 				if ne, ok := err.(net.Error); ok && ne.Timeout() {
 					continue
@@ -198,11 +263,33 @@ func (t *TCPLayer) connectionHandler(conn net.Conn, host Host) {
 				t.disconnect(host)
 				return
 			}
-			data := make([]byte, n)
-			copy(data, buf[:n])
-			t.outChannel <- TransportMessage{
-				Host: host,
-				Msg:  *bytes.NewBuffer(data),
+			if n == 0 {
+				continue
+			}
+
+			if _, err := recvBuf.Write(readBuf[:n]); err != nil {
+				t.logger.Error("tcp recv buffer write failed", "host", host.ToString(), "err", err)
+				t.disconnect(host)
+				return
+			}
+
+			frames, err := decodeFrames(recvBuf)
+			if err != nil {
+				t.logger.Error("tcp frame decode failed, disconnecting", "host", host.ToString(), "err", err)
+				t.outTransportEvents <- &TransportFailed{host: host}
+				t.disconnect(host)
+				return
+			}
+
+			for _, frame := range frames {
+				// Each frame is the payload that upper layers already understand:
+				// [LayerID || ProtocolID || MessageID || Contents]
+				data := make([]byte, len(frame))
+				copy(data, frame)
+				t.outChannel <- TransportMessage{
+					Host: host,
+					Msg:  *bytes.NewBuffer(data),
+				}
 			}
 		}
 	}

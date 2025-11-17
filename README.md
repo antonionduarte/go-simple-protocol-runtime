@@ -238,18 +238,31 @@ newer timers to overwrite older ones.
 
 ## Serialized Format of Messages
 
-The serialized format of messages sent in the system is going to be:  
-```
-LayerID || ProtocolID || MessageID || Contents  
+On the wire, data flows in layers:
 
-LayerID -> Distinguish between application level messages or Session level messages.
-    - ID: 1 - Application Level:    User defined messages.
-    - ID: 2 - Session Level:        Messages used to establish session, 
-                                    i.e. the ones used for the handshake protocol.
-                                    
-ProtocolID ->   Used to distribute messages to the correct ProtoProtocol,
-                which should be registered in the Runtime.
+- **TCP frame** (handled by `TCPLayer`):
 
-MessageID ->    Used to distribute messages to the correct MessageHandler of the
-                Protocol. Which should be registered in the ProtoProtocol.
-```
+  ```text
+  [Length(uint32 BE) || LayerID(1 byte) || Body...]
+  ```
+
+- **Session layer body** (handled by `SessionLayer`):
+
+  - Application traffic (`LayerID = 0`):
+
+    ```text
+    [ProtocolID(uint16 LE) || MessageID(uint16 LE) || Payload...]
+    ```
+
+  - Session/handshake traffic (`LayerID = 1`):
+
+    ```text
+    [HandshakeType(1 byte) || HandshakeData...]
+    ```
+
+    where `HandshakeType` is `Hello` (followed by serialized `Host`) or `Ack`
+    (no extra data).
+
+`ProtocolID` is used to route messages to the correct `ProtoProtocol`,
+and `MessageID` is used to select the message handler within that protocol.*** End Patch***"}}
+``` assistant to=functions.apply_patch האנализ code``` ***!

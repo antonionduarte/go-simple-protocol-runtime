@@ -8,10 +8,6 @@ import (
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 )
 
-/* ------------------------------------------------------------------
-   processMessage dispatch / error-path tests
-   ------------------------------------------------------------------ */
-
 // TestProcessMessage_DispatchesMessage verifies that a well-formed buffer
 // is deserialized and pushed into the correct protocol's messageChannel.
 func TestProcessMessage_DispatchesToHandler(t *testing.T) {
@@ -133,4 +129,19 @@ func TestProcessMessage_DeserializeError(t *testing.T) {
 	default:
 		// ok
 	}
+}
+
+// TestProcessMessage_TruncatedHeader ensures that a buffer that doesn't contain
+// enough bytes for ProtocolID/MessageID is handled gracefully.
+func TestProcessMessage_TruncatedHeader(t *testing.T) {
+	resetRuntimeForTests()
+	_ = GetRuntimeInstance()
+
+	// Only 1 byte, but we need at least 4 for protocolID+messageID.
+	var buf bytes.Buffer
+	buf.WriteByte(0x01)
+
+	from := net.NewHost(9999, "127.0.0.1")
+	processMessage(buf, from)
+	// No panic and no message dispatched: there is no protocol registered in this test.
 }

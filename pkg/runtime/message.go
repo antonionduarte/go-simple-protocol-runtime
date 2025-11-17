@@ -43,6 +43,8 @@ func SendMessage(msg Message, sendTo net.Host) error {
 		return err
 	}
 
+	// Application-level header + payload format:
+	//   [ProtocolID(uint16 LE) || MessageID(uint16 LE) || Payload...]
 	buffer := new(bytes.Buffer)
 
 	protocolID := uint16(msg.ProtocolID())

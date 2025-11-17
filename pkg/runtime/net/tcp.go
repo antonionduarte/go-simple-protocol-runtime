@@ -41,7 +41,15 @@ type (
 const maxFrameSize uint32 = 16 * 1024 * 1024 // 16MiB
 
 // encodeFrame wraps a payload with a 4-byte big-endian length prefix.
-// Frame format: [length(uint32 BE) || payload].
+// On the wire, each TCP frame sent by this layer has the format:
+//
+//	[Length(uint32 BE) || LayerID(1 byte) || Body...]
+//
+// where Body is:
+//   - for application traffic: [ProtocolID(uint16 LE) || MessageID(uint16 LE) || Payload...]
+//   - for session traffic:     [HandshakeType(1 byte) || HandshakeData...]
+//
+// The LayerID and Body are produced/consumed by the SessionLayer.
 func encodeFrame(payload []byte) ([]byte, error) {
 	if len(payload) == 0 {
 		// Allow empty payloads, but still send a 0-length frame.

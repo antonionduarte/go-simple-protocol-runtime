@@ -87,11 +87,13 @@ type (
 		host Host
 	}
 
-	// LayerIdentifier helps differentiate handshake (session) vs. application messages
+	// LayerIdentifier differentiates between application-level payloads and
+	// session/handshake payloads carried over the same transport.
 	LayerIdentifier int
 )
 
-// Some constants to identify the type of session message.
+// LayerIdentifier constants. These values are written on the wire as the first
+// byte of the session payload coming from the transport layer.
 const (
 	Application LayerIdentifier = iota
 	Session
@@ -107,7 +109,8 @@ const (
 	SessionStateClosing
 )
 
-// HandshakeType values.
+// HandshakeType values. Session-layer payloads always start with a single
+// byte HandshakeType followed by type-specific data (if any).
 const (
 	HandshakeHello HandshakeType = iota + 1
 	HandshakeAck
@@ -331,7 +334,9 @@ func (s *sessionConn) handleTransportFailed() {
 }
 
 // encodeHello builds a session-layer handshake payload that announces the
-// sender's logical Host.
+// sender's logical Host. The payload format is:
+//
+//	[HandshakeType(1 byte, HandshakeHello) || SerializeHost(self)]
 func encodeHello(h Host) bytes.Buffer {
 	payload := SerializeHost(h)
 	buf := bytes.NewBuffer(nil)
@@ -340,7 +345,9 @@ func encodeHello(h Host) bytes.Buffer {
 	return *buf
 }
 
-// encodeAck builds a session-layer handshake ACK payload with no extra data.
+// encodeAck builds a session-layer handshake ACK payload with no extra data:
+//
+//	[HandshakeType(1 byte, HandshakeAck)]
 func encodeAck() bytes.Buffer {
 	buf := bytes.NewBuffer(nil)
 	buf.WriteByte(byte(HandshakeAck))
@@ -348,7 +355,11 @@ func encodeAck() bytes.Buffer {
 }
 
 // parseHandshakePayload interprets a session-layer handshake payload into a
-// HandshakeType and optional Host (for Hello messages).
+// HandshakeType and optional Host (for Hello messages). The expected layout is:
+//
+//	[HandshakeType(1 byte) || Data...]
+//
+// where Data is SerializeHost(host) for HandshakeHello and empty for HandshakeAck.
 func parseHandshakePayload(buf *bytes.Buffer) (HandshakeType, Host, error) {
 	var zeroHost Host
 	if buf.Len() == 0 {
@@ -440,6 +451,13 @@ func (s *SessionLayer) transportMessageHandler(msg TransportMessage) {
 	case Session:
 		s.logger.Debug("session handshake message received", "from", msg.Host.ToString(), "bytes", sessionMsg.Msg.Len())
 		s.dispatchHandshakeMessage(msg.Host, sessionMsg)
+
+	default:
+		s.logger.Warn("session message with unknown layer identifier dropped",
+			"from", msg.Host.ToString(),
+			"layer", sessionMsg.layer,
+			"bytes", sessionMsg.Msg.Len(),
+		)
 	}
 }
 

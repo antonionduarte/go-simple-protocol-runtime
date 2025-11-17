@@ -13,5 +13,5 @@ func main() {
 	// fmt.Printf(host.IP)
 	// fmt.Printf(deserialized.IP + ":")
 	// fmt.Printf(strconv.Itoa(deserialized.Port))
-	fmt.Printf(deserialized.ToString())
+	fmt.Print(deserialized.ToString())
 }

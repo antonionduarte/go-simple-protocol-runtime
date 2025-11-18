@@ -9,8 +9,9 @@ import (
 )
 
 type componentFilterHandler struct {
-	next    slog.Handler
-	allowed map[string]struct{}
+	next      slog.Handler
+	allowed   map[string]struct{}
+	component string // logger-level component, if set via WithAttrs
 }
 
 func NewComponentFilterHandler(next slog.Handler, allowedComponents []string) slog.Handler {
@@ -29,35 +30,60 @@ func (h *componentFilterHandler) Enabled(ctx context.Context, level slog.Level) 
 }
 
 func (h *componentFilterHandler) Handle(ctx context.Context, r slog.Record) error {
-	keep := false
+	// If this logger has a fixed component (set via WithAttrs), decide based
+	// solely based on that value.
+	if h.component != "" {
+		if _, ok := h.allowed[h.component]; !ok {
+			return nil
+		}
+		return h.next.Handle(ctx, r)
+	}
+
+	// Otherwise, fall back to inspecting record-level attributes. This allows
+	// callers to pass "component" explicitly in individual log calls.
+	hasComponent := false
+	allowed := false
 	r.Attrs(func(a slog.Attr) bool {
 		if a.Key == "component" {
 			if a.Value.Kind() == slog.KindString {
+				hasComponent = true
 				if _, ok := h.allowed[a.Value.String()]; ok {
-					keep = true
+					allowed = true
 				}
 			}
 			return false
 		}
 		return true
 	})
-	if !keep {
+	if hasComponent && !allowed {
 		return nil
 	}
 	return h.next.Handle(ctx, r)
 }
 
 func (h *componentFilterHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	// Detect if this logger is being enriched with a logger-level component
+	// attribute. If so, capture it so Handle can filter on it even though
+	// it is not present in individual Records.
+	component := h.component
+	for _, a := range attrs {
+		if a.Key == "component" && a.Value.Kind() == slog.KindString {
+			component = a.Value.String()
+			break
+		}
+	}
 	return &componentFilterHandler{
-		next:    h.next.WithAttrs(attrs),
-		allowed: h.allowed,
+		next:      h.next.WithAttrs(attrs),
+		allowed:   h.allowed,
+		component: component,
 	}
 }
 
 func (h *componentFilterHandler) WithGroup(name string) slog.Handler {
 	return &componentFilterHandler{
-		next:    h.next.WithGroup(name),
-		allowed: h.allowed,
+		next:      h.next.WithGroup(name),
+		allowed:   h.allowed,
+		component: h.component,
 	}
 }
 

@@ -76,7 +76,6 @@ func (p *MyProtocol) HandleMyMessage(msg runtime.Message) {
     _ = p.ctx.Send(NewMyReply(p.self), p.peer)
 }
 ```
-```
 
 If your protocol wants to react to session events, it can optionally implement:
 
@@ -192,7 +191,9 @@ func (p *MyProtocol) Start(ctx runtime.ProtocolContext) {
 ## Configuration (YAML)
 
 Example applications can be configured via a simple YAML file using the
-`pkg/runtime/config` package. A minimal schema looks like:
+`pkg/runtime/config` package. For the `pingpong` example, YAML is used for
+logging and buffer settings, while self/peer hosts are provided via flags.
+A minimal schema looks like:
 
 ```yaml
 logging:
@@ -201,19 +202,19 @@ logging:
   format: text          # text or json
 
 runtime:
-  self:
-    ip: 127.0.0.1
-    port: 5001
-  peer:
-    ip: 127.0.0.1
-    port: 5002
 ```
 
-In `cmd/pingpong/main.go` you can pass `-config pingpong.example.yaml` to load
-these settings. The config is used to build the base logger via
-`runtime.NewLoggerFromConfig(cfg.Logging)` and to choose the self/peer hosts.
-If you also provide `-port` / `-peer-port` flags, those ports override the
-values from the config file.
+In `cmd/pingpong/main.go` you can pass `-config cmd/pingpong/pingpong.example.yaml`
+to load these settings. The config is used to build the base logger via
+`runtime.NewLoggerFromConfig(cfg.Logging)` and to configure buffer sizes.
+Self/peer hosts are chosen via command-line flags on the `pingpong` binary:
+
+```bash
+go run ./cmd/pingpong \
+  -config cmd/pingpong/pingpong.example.yaml \
+  -self-ip 127.0.0.1 -self-port 5001 \
+  -peer-ip 127.0.0.1 -peer-port 5002
+```
 
 ## Errors we could detect and log:
 

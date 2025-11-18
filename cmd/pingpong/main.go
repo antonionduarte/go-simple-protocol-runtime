@@ -11,11 +11,21 @@ import (
 )
 
 func main() {
-	configPath := flag.String("config", "", "YAML config file (required)")
+	configPath := flag.String("config", "", "YAML config file for logging/runtime buffers (required)")
+	selfIP := flag.String("self-ip", "127.0.0.1", "IP address for this pingpong node")
+	selfPort := flag.Int("self-port", 0, "TCP port for this pingpong node (required)")
+	peerIP := flag.String("peer-ip", "127.0.0.1", "IP address for the peer pingpong node")
+	peerPort := flag.Int("peer-port", 0, "TCP port for the peer pingpong node (required)")
 	flag.Parse()
 
 	if *configPath == "" {
 		panic("config file is required (use -config path/to/config.yaml)")
+	}
+	if *selfPort == 0 {
+		panic("self-port is required (use -self-port N)")
+	}
+	if *peerPort == 0 {
+		panic("peer-port is required (use -peer-port N)")
 	}
 
 	cfg, err := rtconfig.LoadConfig(*configPath)
@@ -26,8 +36,8 @@ func main() {
 	logger := runtime.ApplyConfig(cfg)
 	instance := runtime.GetRuntimeInstance()
 
-	myself := net.NewHost(cfg.Runtime.Self.Port, cfg.Runtime.Self.IP)
-	peer := net.NewHost(cfg.Runtime.Peer.Port, cfg.Runtime.Peer.IP)
+	myself := net.NewHost(*selfPort, *selfIP)
+	peer := net.NewHost(*peerPort, *peerIP)
 
 	selfStr := (&myself).ToString()
 	peerStr := (&peer).ToString()

@@ -110,6 +110,9 @@ func (r *Runtime) Logger() *slog.Logger {
 }
 
 func (r *Runtime) Start() {
+	// Start sets up a fresh background context for this Runtime instance and
+	// launches all long-lived goroutines owned by the runtime (protocol event
+	// loops, session event pump, and the main dispatcher).
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	r.cancelFunc = cancel
@@ -164,6 +167,11 @@ func (r *Runtime) GetProtocol(protocolID int) *ProtoProtocol {
 }
 
 func (r *Runtime) Cancel() {
+	// Cancel tears down the runtime in the following order:
+	//   1. Cancel the runtime context (used by all internal goroutines).
+	//   2. Stop session and transport layers.
+	//   3. Stop and clear all timers.
+	//   4. Wait for all goroutines to finish via the WaitGroup.
 	r.cancelFunc()
 	if r.sessionLayer != nil {
 		r.sessionLayer.Cancel()

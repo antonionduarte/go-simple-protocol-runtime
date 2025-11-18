@@ -86,3 +86,27 @@ func TestSessionLayerFailedConnection(t *testing.T) {
 		t.Fatalf("expected failed host %v, got %v", hNoServer, failed.Host())
 	}
 }
+
+// TestSessionLayerCancelStopsEvents ensures that calling Cancel on the
+// SessionLayer stops the handler loop and no further events are emitted.
+func TestSessionLayerCancelStopsEvents(t *testing.T) {
+	h := NewHost(7201, "127.0.0.1")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tcp := NewTCPLayer(h, ctx)
+	defer tcp.Cancel()
+
+	s := NewSessionLayer(tcp, h, ctx)
+
+	// Immediately cancel the session layer; there should be no events after this.
+	s.Cancel()
+
+	select {
+	case ev := <-s.OutChannelEvents():
+		t.Fatalf("did not expect event after SessionLayer.Cancel(), got %T", ev)
+	case <-time.After(20 * time.Millisecond):
+		// ok
+	}
+}

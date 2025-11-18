@@ -264,5 +264,14 @@ On the wire, data flows in layers:
     (no extra data).
 
 `ProtocolID` is used to route messages to the correct `ProtoProtocol`,
-and `MessageID` is used to select the message handler within that protocol.*** End Patch***"}}
-``` assistant to=functions.apply_patch האנализ code``` ***!
+and `MessageID` is used to select the message handler within that protocol.
+
+## Testing
+
+For concurrency-sensitive behavior (e.g. runtime lifecycle, session handling),
+you can run selected tests under the race detector:
+
+```bash
+go test -race ./pkg/runtime -run TestRuntime_LifecycleShutdown
+go test -race ./pkg/runtime/net -run 'TestSessionLayer|TestTCPLayer'
+```

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"testing"
+	"time"
 )
 
 func TestTCPLayerConnection(t *testing.T) {
@@ -198,5 +199,49 @@ func TestDisconnect(t *testing.T) {
 
 	if secondNode.activeConnectionCount() != 0 {
 		t.Errorf("TCPConnection on secondNode should've been deleted.")
+	}
+}
+
+// TestTCPLayerCancelClosesConnections verifies that Cancel() on TCPLayer
+// closes all active connections and leaves no connections tracked.
+func TestTCPLayerCancelClosesConnections(t *testing.T) {
+	first := NewHost(7801, "127.0.0.1")
+	second := NewHost(7802, "127.0.0.1")
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	defer cancel1()
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+
+	firstNode := NewTCPLayer(first, ctx1)
+	secondNode := NewTCPLayer(second, ctx2)
+
+	firstNode.Connect(second)
+
+	connectCount := 0
+	for {
+		if connectCount == 2 {
+			break
+		}
+		select {
+		case <-secondNode.OutTransportEvents():
+			connectCount++
+		case <-firstNode.OutTransportEvents():
+			connectCount++
+		}
+	}
+
+	// Now cancel both layers and ensure there are no active connections.
+	firstNode.Cancel()
+	secondNode.Cancel()
+
+	// Give some time for handlers to observe ctx cancellation.
+	time.Sleep(10 * time.Millisecond)
+
+	if got := firstNode.activeConnectionCount(); got != 0 {
+		t.Fatalf("expected firstNode to have 0 active connections after Cancel, got %d", got)
+	}
+	if got := secondNode.activeConnectionCount(); got != 0 {
+		t.Fatalf("expected secondNode to have 0 active connections after Cancel, got %d", got)
 	}
 }

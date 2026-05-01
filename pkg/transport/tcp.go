@@ -171,7 +171,9 @@ func (t *TCPLayer) closeOnCtxDone() {
 	}
 	t.mutex.Lock()
 	for host, conn := range t.activeConnections {
-		_ = conn.Close()
+		if conn != nil {
+			_ = conn.Close()
+		}
 		delete(t.activeConnections, host)
 	}
 	t.mutex.Unlock()
@@ -179,7 +181,7 @@ func (t *TCPLayer) closeOnCtxDone() {
 
 func (t *TCPLayer) send(networkMessage Message, sendTo Host) {
 	conn, ok := t.getActiveConn(sendTo)
-	if !ok {
+	if !ok || conn == nil {
 		// no active connection
 		return
 	}
@@ -204,10 +206,13 @@ func (t *TCPLayer) send(networkMessage Message, sendTo Host) {
 
 func (t *TCPLayer) disconnect(host Host) {
 	conn, ok := t.removeActiveConn(host)
-	if ok {
-		_ = conn.Close()
-		t.outEvents <- &Disconnected{host: host}
+	if !ok {
+		return
 	}
+	if conn != nil {
+		_ = conn.Close()
+	}
+	t.outEvents <- &Disconnected{host: host}
 }
 
 func (t *TCPLayer) connect(host Host) {
@@ -263,6 +268,12 @@ func (t *TCPLayer) listenerHandler(listener net.Listener) {
 				// log error or continue
 				continue
 			}
+		}
+		if conn == nil {
+			// Defensive: stdlib's net.Listener.Accept doesn't document
+			// (nil, nil) as a possible return, but nothing in the contract
+			// forbids it either.
+			continue
 		}
 		remote := conn.RemoteAddr().(*net.TCPAddr)
 		host := NewHost(remote.Port, remote.IP.String())

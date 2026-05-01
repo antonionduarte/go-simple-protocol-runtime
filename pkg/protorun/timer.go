@@ -73,9 +73,7 @@ func (r *Runtime) setupPeriodicTimer(owner *protoProtocol, timer Timer, duration
 	r.ongoingPeriodicTimers[timer.TimerID()] = cancel
 	r.timerMutex.Unlock()
 
-	r.wg.Add(1)
-	go func() {
-		defer r.wg.Done()
+	r.wg.Go(func() {
 		defer cancel()
 		ticker := time.NewTicker(duration)
 		defer ticker.Stop()
@@ -91,5 +89,5 @@ func (r *Runtime) setupPeriodicTimer(owner *protoProtocol, timer Timer, duration
 				}
 			}
 		}
-	}()
+	})
 }

@@ -28,10 +28,8 @@ func TestSessionLayerSuccessfulHandshake(t *testing.T) {
 	h1 := NewHost(7001, "127.0.0.1")
 	h2 := NewHost(7002, "127.0.0.1")
 
-	ctx1, cancel1 := context.WithCancel(context.Background())
-	defer cancel1()
-	ctx2, cancel2 := context.WithCancel(context.Background())
-	defer cancel2()
+	ctx1 := t.Context()
+	ctx2 := t.Context()
 
 	tcp1 := NewTCPLayer(h1, ctx1, 0)
 	tcp2 := NewTCPLayer(h2, ctx2, 0)
@@ -69,8 +67,7 @@ func TestSessionLayerFailedConnection(t *testing.T) {
 	hClient := NewHost(7101, "127.0.0.1")
 	hNoServer := NewHost(7102, "127.0.0.1")
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	tcp := NewTCPLayer(hClient, ctx, 0)
 	defer tcp.Cancel()
@@ -124,8 +121,7 @@ func TestSessionLayer_SendAfterCancel(t *testing.T) {
 func TestSessionLayerCancelStopsEvents(t *testing.T) {
 	h := NewHost(7201, "127.0.0.1")
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	tcp := NewTCPLayer(h, ctx, 0)
 	defer tcp.Cancel()

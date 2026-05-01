@@ -297,9 +297,7 @@ func (r *Runtime) startSessionEvents(ctx context.Context) {
 		return
 	}
 
-	r.wg.Add(1)
-	go func() {
-		defer r.wg.Done()
+	r.wg.Go(func() {
 		for {
 			select {
 			case <-ctx.Done():
@@ -310,7 +308,7 @@ func (r *Runtime) startSessionEvents(ctx context.Context) {
 				}
 			}
 		}
-	}()
+	})
 }
 
 // dispatchSessionEvent translates a SessionLayer event into the runtime's

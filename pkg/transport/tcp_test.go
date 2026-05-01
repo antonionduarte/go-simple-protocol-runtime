@@ -193,10 +193,8 @@ func TestTCPLayerCancelClosesConnections(t *testing.T) {
 	first := NewHost(7801, "127.0.0.1")
 	second := NewHost(7802, "127.0.0.1")
 
-	ctx1, cancel1 := context.WithCancel(context.Background())
-	defer cancel1()
-	ctx2, cancel2 := context.WithCancel(context.Background())
-	defer cancel2()
+	ctx1 := t.Context()
+	ctx2 := t.Context()
 
 	firstNode := NewTCPLayer(first, ctx1, 0)
 	secondNode := NewTCPLayer(second, ctx2, 0)

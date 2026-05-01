@@ -106,7 +106,7 @@ func TestRuntime_LifecycleShutdown(t *testing.T) {
 // under -race to catch send-on-closed-channel or goroutine-leak regressions.
 func TestRuntime_RapidStartCancel(t *testing.T) {
 	const iterations = 50
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		self := transport.NewHost(0, "127.0.0.1")
 		rt := New(self)
 

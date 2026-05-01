@@ -2,8 +2,8 @@
 // example. It is intentionally outside the framework — the runtime
 // itself reads no config files; users wire their own configuration
 // loaders to whatever knobs the framework exposes (see
-// runtime.LoggingConfig, runtime.WithLogger, runtime.WithRetryPolicy,
-// runtime.Default*Buffer).
+// protorun.LoggingConfig, protorun.WithLogger, protorun.WithRetryPolicy,
+// protorun.Default*Buffer).
 package config
 
 import (
@@ -12,7 +12,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime"
+	"github.com/antonionduarte/go-simple-protocol-runtime"
 )
 
 // HostConfig is a simple host (ip:port) specification used in pingpong's
@@ -30,7 +30,7 @@ type RuntimeConfig struct {
 	ChannelBuffer int        `yaml:"channelBuffer"`
 }
 
-// loggingFile mirrors runtime.LoggingConfig's wire shape with yaml tags.
+// loggingFile mirrors protorun.LoggingConfig's wire shape with yaml tags.
 type loggingFile struct {
 	Level      string   `yaml:"level"`
 	Components []string `yaml:"components"`
@@ -39,7 +39,7 @@ type loggingFile struct {
 
 // Config is the top-level YAML configuration structure.
 type Config struct {
-	Logging runtime.LoggingConfig
+	Logging protorun.LoggingConfig
 	Runtime RuntimeConfig
 }
 
@@ -70,7 +70,7 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	return &Config{
-		Logging: runtime.LoggingConfig{
+		Logging: protorun.LoggingConfig{
 			Level:      raw.Logging.Level,
 			Components: raw.Logging.Components,
 			Format:     raw.Logging.Format,

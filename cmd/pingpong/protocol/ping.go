@@ -3,8 +3,8 @@ package protocol
 import (
 	"log/slog"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime"
-	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/transport"
+	"github.com/antonionduarte/go-simple-protocol-runtime"
+	"github.com/antonionduarte/go-simple-protocol-runtime/transport"
 )
 
 type PingPongProtocol struct {
@@ -12,24 +12,24 @@ type PingPongProtocol struct {
 	seq  uint64
 
 	logger *slog.Logger
-	ctx    runtime.ProtocolContext
+	ctx    protorun.ProtocolContext
 }
 
 func NewPingPongProtocol(peer transport.Host) *PingPongProtocol {
 	return &PingPongProtocol{peer: peer}
 }
 
-func (p *PingPongProtocol) Start(ctx runtime.ProtocolContext) {
+func (p *PingPongProtocol) Start(ctx protorun.ProtocolContext) {
 	p.logger = ctx.Logger()
 	p.ctx = ctx
 
-	runtime.RegisterCodec[*PingMessage](ctx, runtime.BinaryCodec[*PingMessage]{})
-	runtime.RegisterCodec[*PongMessage](ctx, runtime.BinaryCodec[*PongMessage]{})
-	runtime.RegisterHandler[*PingMessage](ctx, p.HandlePing)
-	runtime.RegisterHandler[*PongMessage](ctx, p.HandlePong)
+	protorun.RegisterCodec[*PingMessage](ctx, protorun.BinaryCodec[*PingMessage]{})
+	protorun.RegisterCodec[*PongMessage](ctx, protorun.BinaryCodec[*PongMessage]{})
+	protorun.RegisterHandler[*PingMessage](ctx, p.HandlePing)
+	protorun.RegisterHandler[*PongMessage](ctx, p.HandlePong)
 }
 
-func (p *PingPongProtocol) Init(ctx runtime.ProtocolContext) {
+func (p *PingPongProtocol) Init(ctx protorun.ProtocolContext) {
 	if err := ctx.Connect(p.peer); err != nil {
 		p.logger.Error("initial Connect failed", "peer", (&p.peer).ToString(), "err", err)
 	}

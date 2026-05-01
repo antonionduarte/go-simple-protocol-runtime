@@ -3,21 +3,21 @@ package protocol
 import (
 	"testing"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime"
+	"github.com/antonionduarte/go-simple-protocol-runtime"
 )
 
-// Pingpong now uses runtime.BinaryCodec for its messages — BaseMessage is
+// Pingpong now uses protorun.BinaryCodec for its messages — BaseMessage is
 // a zero-byte marker, so encoding/binary can size the structs and the
 // codec works with no manual encode/decode logic.
 
 func TestPingBinaryCodec_RoundTrip(t *testing.T) {
-	codec := runtime.BinaryCodec[*PingMessage]{}
+	codec := protorun.BinaryCodec[*PingMessage]{}
 	original := NewPingMessage(42)
-	payload, err := codec.Encode(original)
+	payload, err := codec.Marshal(original)
 	if err != nil {
 		t.Fatalf("Encode: %v", err)
 	}
-	got, err := codec.Decode(payload)
+	got, err := codec.Unmarshal(payload)
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
@@ -27,13 +27,13 @@ func TestPingBinaryCodec_RoundTrip(t *testing.T) {
 }
 
 func TestPongBinaryCodec_RoundTrip(t *testing.T) {
-	codec := runtime.BinaryCodec[*PongMessage]{}
+	codec := protorun.BinaryCodec[*PongMessage]{}
 	original := NewPongMessage(99)
-	payload, err := codec.Encode(original)
+	payload, err := codec.Marshal(original)
 	if err != nil {
 		t.Fatalf("Encode: %v", err)
 	}
-	got, err := codec.Decode(payload)
+	got, err := codec.Unmarshal(payload)
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}

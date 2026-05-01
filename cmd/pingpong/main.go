@@ -7,8 +7,8 @@ import (
 
 	rtconfig "github.com/antonionduarte/go-simple-protocol-runtime/cmd/pingpong/config"
 	"github.com/antonionduarte/go-simple-protocol-runtime/cmd/pingpong/protocol"
-	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime"
-	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/transport"
+	"github.com/antonionduarte/go-simple-protocol-runtime"
+	"github.com/antonionduarte/go-simple-protocol-runtime/transport"
 )
 
 func main() {
@@ -34,7 +34,7 @@ func main() {
 		panic(err)
 	}
 
-	logger := runtime.NewLoggerFromConfig(cfg.Logging)
+	logger := protorun.NewLoggerFromConfig(cfg.Logging)
 	slog.SetDefault(logger)
 
 	myself := transport.NewHost(*selfPort, *selfIP)
@@ -45,9 +45,9 @@ func main() {
 		"peer", (&peer).ToString(),
 	)
 
-	rt := runtime.New(myself,
-		runtime.WithLogger(logger),
-		runtime.WithTCPTransport(context.Background()),
+	rt := protorun.New(myself,
+		protorun.WithLogger(logger),
+		protorun.WithTCPTransport(context.Background()),
 	)
 	rt.Register(protocol.NewPingPongProtocol(peer))
 

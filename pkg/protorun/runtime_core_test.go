@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/transport"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/transport"
 )
 
 func TestRegisterProtocol(t *testing.T) {

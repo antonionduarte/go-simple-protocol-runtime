@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/transport"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/transport"
 )
 
 // Message is a marker interface satisfied by any type that embeds

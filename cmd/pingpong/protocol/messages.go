@@ -1,6 +1,6 @@
 package protocol
 
-import "github.com/antonionduarte/go-simple-protocol-runtime"
+import "github.com/antonionduarte/go-simple-protocol-runtime/pkg/protorun"
 
 // PingMessage and PongMessage are pure fixed-size payloads. Because
 // protorun.BaseMessage is a zero-byte marker, encoding/binary can size

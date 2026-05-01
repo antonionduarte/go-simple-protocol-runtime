@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/transport"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/transport"
 )
 
 // processFrame builds the on-wire bytes for a single application-level

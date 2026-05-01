@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/transport"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/transport"
 )
 
 // TestRuntime_TwoRuntimes_PingPong stands up two independent runtimes on

@@ -7,8 +7,8 @@ import (
 
 	rtconfig "github.com/antonionduarte/go-simple-protocol-runtime/cmd/pingpong/config"
 	"github.com/antonionduarte/go-simple-protocol-runtime/cmd/pingpong/protocol"
-	"github.com/antonionduarte/go-simple-protocol-runtime"
-	"github.com/antonionduarte/go-simple-protocol-runtime/transport"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/protorun"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/transport"
 )
 
 func main() {

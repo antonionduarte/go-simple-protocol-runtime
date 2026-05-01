@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/transport"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/transport"
 )
 
 type testTimer struct {

@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/transport"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/transport"
 )
 
 // Package runtime exposes the core protocol runtime and the primary APIs

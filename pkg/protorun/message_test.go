@@ -3,7 +3,7 @@ package protorun
 import (
 	"testing"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/transport"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/transport"
 )
 
 // TestSendMessage_CodecError verifies that sendMessage propagates the

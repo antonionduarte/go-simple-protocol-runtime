@@ -3,7 +3,7 @@ package protorun
 import (
 	"sync/atomic"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/transport"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/transport"
 )
 
 // MockProtocol is a stub Protocol used in tests. It does no work itself —

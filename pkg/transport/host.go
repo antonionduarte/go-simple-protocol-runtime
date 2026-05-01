@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/wire"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/wire"
 )
 
 // Host identifies a peer by string IP-or-hostname plus port. The IP field

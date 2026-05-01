@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime"
-	"github.com/antonionduarte/go-simple-protocol-runtime/transport"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/protorun"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/transport"
 )
 
 // myMessage is a tiny fixed-size message used by the examples below.

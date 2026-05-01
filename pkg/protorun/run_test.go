@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/transport"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/transport"
 )
 
 // TestRuntime_RegisterAndRun verifies that Register adds the protocol and

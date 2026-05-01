@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/transport"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/transport"
 )
 
 // WireNamer lets a message type freeze its wire identifier across Go-type

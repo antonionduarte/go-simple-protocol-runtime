@@ -4,12 +4,38 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/transport"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/transport"
+)
+
+// Public sentinel errors. The runtime returns these (or wraps them with
+// fmt.Errorf("...: %w", Err...)) so callers can use errors.Is to test
+// for specific failure conditions instead of string-matching.
+var (
+	// ErrNoSessionLayer is returned by Connect/Disconnect/ConnectWithRetry
+	// when no SessionLayer has been registered (typically because
+	// WithTCPTransport was not supplied to New).
+	ErrNoSessionLayer = errors.New("protorun: session layer not registered")
+
+	// ErrNoNetworkLayer is returned by Run when no transport.Layer has
+	// been registered.
+	ErrNoNetworkLayer = errors.New("protorun: network layer not registered")
+
+	// ErrAlreadyCancelled is returned by Run when Cancel has already
+	// been called on the runtime instance.
+	ErrAlreadyCancelled = errors.New("protorun: cannot start a runtime that has been cancelled")
+
+	// ErrNoCodec is returned by Send when no Codec has been registered
+	// for the message type's wire identifier.
+	ErrNoCodec = errors.New("protorun: no codec registered for message type")
 )
 
 type Runtime struct {
@@ -391,4 +417,46 @@ func (r *Runtime) processMessage(buffer bytes.Buffer, from transport.Host) {
 	case protocol.messageChannel <- messageEnvelope{msg: message, from: from}:
 	case <-ctx.Done():
 	}
+}
+
+// WithTCPTransport wires the runtime's transport + session layers with
+// the framework's TCP+Hello/Ack stack. It is the typical way to set up
+// a runtime — most users never need to construct TCPLayer or
+// SessionLayer themselves.
+//
+// The supplied ctx becomes the parent for both layers' internal
+// goroutines.
+func WithTCPTransport(ctx context.Context) Option {
+	return func(r *Runtime) {
+		tcp := transport.NewTCPLayer(r.self, ctx, 0)
+		session := transport.NewSessionLayer(tcp, r.self, ctx, 0, 0)
+		r.networkLayer = tcp
+		r.sessionLayer = session
+	}
+}
+
+// Run starts the runtime, installs SIGINT/SIGTERM handlers that call
+// Cancel on receipt, and blocks until the runtime context is done.
+// Returns the error from start if any. Use Run from cmd/main instead of
+// orchestrating Start + signal handling + select{} yourself.
+func (r *Runtime) Run() error {
+	if err := r.start(); err != nil {
+		return err
+	}
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		select {
+		case <-sigCh:
+			r.Logger().Info("signal received, cancelling runtime")
+			r.Cancel()
+		case <-r.ctx.Done():
+		}
+		signal.Stop(sigCh)
+	}()
+
+	<-r.ctx.Done()
+	return nil
 }

@@ -1,0 +1,105 @@
+# golangci-lint configuration
+#
+# Thresholds are anchored on Go-community conventions and Go-specific
+# linter defaults (not on Java/general software-engineering literature).
+#
+#   - cyclop.max-complexity        = 10    (gocyclo/cyclop Go default)
+#   - gocognit.min-complexity      = 20    (gocognit README "complex function" threshold)
+#   - funlen.lines / statements    = 60/40 (funlen Go default, calibrated for
+#                                           Go's explicit error-handling idioms)
+#   - lll.line-length              = 120   (Uber Go Style Guide hard limit)
+#   - dupl.threshold               = 150   (dupl Go default, ~15 lines)
+
+version: "2"
+
+run:
+  timeout: 10m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    # Correctness / quality (Go-community consensus "safe" set)
+    - errcheck
+    - govet
+    - staticcheck        # folds in gosimple + stylecheck in v2
+    - unused
+    - ineffassign
+    - revive
+    - bodyclose
+    - contextcheck
+    - errorlint
+    - nilerr
+    - nolintlint
+    - rowserrcheck
+    - sqlclosecheck
+    - tparallel
+    - wastedassign
+    - misspell
+    - unparam            # unused function parameters (dead-code signal)
+    - gocritic           # diagnostic + performance checks only (no style noise)
+    - gosec              # security: SQL injection, creds, crypto, perms
+    # Complexity / size (the Uncle Bob metrics, Go-specific thresholds)
+    - cyclop
+    - gocognit
+    - funlen
+    - lll
+    - dupl
+
+  settings:
+    cyclop:
+      max-complexity: 10         # gocyclo/cyclop Go default (McCabe 1976)
+      package-average: 10.0      # cyclop default
+    gocognit:
+      min-complexity: 20         # gocognit README "complex function" threshold
+    funlen:
+      lines: 60                  # funlen Go default
+      statements: 40             # funlen Go default
+      ignore-comments: true
+    lll:
+      line-length: 120           # Uber Go Style Guide hard limit
+    dupl:
+      threshold: 150             # dupl Go default (~15 lines of duplicated tokens)
+    gocritic:
+      # Only enable real-bug and perf checks. `style` and `opinionated`
+      # tags are bikeshed-heavy.
+      enabled-tags:
+        - diagnostic
+        - performance
+      disabled-checks:
+        - ifElseChain            # fights Go's idiomatic if/else ladders
+        - singleCaseSwitch       # we occasionally use single-case for future-proofing
+    gosec:
+      excludes:
+        - G104                   # errcheck already covers unhandled errors
+        - G115                   # int overflow conversion, high false-positive rate
+      config:
+        G101:
+          pattern: "(?i)(pass(word)?|secret|token|api[_-]?key|private[_-]?key)"
+    unparam:
+      check-exported: false      # exported funcs often shaped to satisfy interfaces
+    revive:
+      rules:
+        - name: var-naming
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+
+  exclusions:
+    generated: lax
+    paths:
+      - bin
+    rules:
+      # Test files don't enforce the heavier complexity/size/dup rules.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - bodyclose
+          - funlen
+          - gocognit
+          - cyclop
+          - dupl
+          - lll
+          - gosec
+          - gocritic
+          - unparam

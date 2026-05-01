@@ -29,6 +29,10 @@ func (h *componentFilterHandler) Enabled(ctx context.Context, level slog.Level) 
 	return h.next.Enabled(ctx, level)
 }
 
+// slog.Handler.Handle signature is fixed by the stdlib; gocritic's hugeParam
+// suggestion (pass r by pointer) cannot apply.
+//
+//nolint:gocritic // stdlib-fixed signature
 func (h *componentFilterHandler) Handle(ctx context.Context, r slog.Record) error {
 	// If this logger has a fixed component (set via WithAttrs), decide based
 	// solely based on that value.

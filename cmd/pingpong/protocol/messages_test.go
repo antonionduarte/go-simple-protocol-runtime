@@ -22,7 +22,7 @@ func TestPingSerializer_RoundTrip(t *testing.T) {
 	if got.Seq() != 42 {
 		t.Fatalf("Seq round-trip: got %d, want 42", got.Seq())
 	}
-	if got.MessageID() != PingMessageID || got.ProtocolID() != PingPongProtocolId {
+	if got.MessageID() != PingMessageID || got.ProtocolID() != PingPongProtocolID {
 		t.Fatalf("IDs not preserved: messageID=%d protocolID=%d", got.MessageID(), got.ProtocolID())
 	}
 }

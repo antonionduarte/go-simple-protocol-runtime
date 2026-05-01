@@ -1,0 +1,52 @@
+name: CI
+
+# CI runs on every PR and push to main. It gates new code against the
+# Go-community standards via `golangci-lint --new-from-rev=origin/main`.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: build, lint, test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # need full history for --new-from-rev
+
+      - name: set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: true
+
+      - name: go build
+        run: go build ./...
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./... -race -coverprofile=coverage.out -covermode=atomic
+
+      - name: install golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.5.0
+
+      # Gate new code against the Go-community standards. Pre-existing
+      # violations are not blocking — only regressions and new violations
+      # fail CI.
+      - name: lint new code
+        run: golangci-lint run --new-from-rev=origin/main ./...
+
+      - name: vulnerability scan
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...

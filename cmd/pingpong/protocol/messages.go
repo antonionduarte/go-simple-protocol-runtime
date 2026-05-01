@@ -37,7 +37,7 @@ type (
 func NewPingMessage(sender net.Host, seq uint64) *PingMessage {
 	return &PingMessage{
 		messageID:  PingMessageID,
-		protocolID: PingPongProtocolId,
+		protocolID: PingPongProtocolID,
 		sender:     sender,
 		seq:        seq,
 		serializer: &PingSerializer{},
@@ -47,7 +47,7 @@ func NewPingMessage(sender net.Host, seq uint64) *PingMessage {
 func NewPongMessage(sender net.Host, seq uint64) *PongMessage {
 	return &PongMessage{
 		messageID:  PongMessageID,
-		protocolID: PingPongProtocolId,
+		protocolID: PingPongProtocolID,
 		sender:     sender,
 		seq:        seq,
 		serializer: &PongSerializer{},
@@ -86,7 +86,7 @@ func (p *PingSerializer) Deserialize(data []byte) (runtime.Message, error) {
 	}
 	return &PingMessage{
 		messageID:  PingMessageID,
-		protocolID: PingPongProtocolId,
+		protocolID: PingPongProtocolID,
 		seq:        binary.LittleEndian.Uint64(data[:8]),
 		serializer: &PingSerializer{},
 	}, nil
@@ -110,7 +110,7 @@ func (p *PongSerializer) Deserialize(data []byte) (runtime.Message, error) {
 	}
 	return &PongMessage{
 		messageID:  PongMessageID,
-		protocolID: PingPongProtocolId,
+		protocolID: PingPongProtocolID,
 		seq:        binary.LittleEndian.Uint64(data[:8]),
 		serializer: &PongSerializer{},
 	}, nil

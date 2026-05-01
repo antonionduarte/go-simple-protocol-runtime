@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -210,28 +211,47 @@ func (r *Runtime) eventHandler(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case msg := <-r.msgChannel:
-			protocol := r.protocols[msg.ProtocolID()]
-			if protocol == nil {
-				continue
-			}
-			select {
-			case protocol.MessageChannel() <- msg:
-			case <-ctx.Done():
+			if !r.routeMessage(ctx, msg) {
 				return
 			}
 		case timer := <-r.timerChannel:
-			protocol := r.protocols[timer.ProtocolID()]
-			if protocol == nil {
-				continue
-			}
-			select {
-			case protocol.TimerChannel() <- timer:
-			case <-ctx.Done():
+			if !r.routeTimer(ctx, timer) {
 				return
 			}
 		case sessionMsg := <-r.sessionLayer.OutMessages():
 			r.processMessage(sessionMsg.Msg, sessionMsg.Host())
 		}
+	}
+}
+
+// routeMessage forwards an incoming Message to the destination protocol's
+// channel. Returns false if the runtime context fired and the dispatcher
+// should exit.
+func (r *Runtime) routeMessage(ctx context.Context, msg Message) bool {
+	protocol := r.protocols[msg.ProtocolID()]
+	if protocol == nil {
+		return true
+	}
+	select {
+	case protocol.MessageChannel() <- msg:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// routeTimer forwards a fired Timer to the destination protocol's channel.
+// Returns false if the runtime context fired and the dispatcher should exit.
+func (r *Runtime) routeTimer(ctx context.Context, timer Timer) bool {
+	protocol := r.protocols[timer.ProtocolID()]
+	if protocol == nil {
+		return true
+	}
+	select {
+	case protocol.TimerChannel() <- timer:
+		return true
+	case <-ctx.Done():
+		return false
 	}
 }
 
@@ -262,47 +282,64 @@ func (r *Runtime) startSessionEvents(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case ev := <-r.sessionLayer.OutChannelEvents():
-				switch e := ev.(type) {
-				case *net.SessionConnected:
-					host := e.Host()
-					for _, proto := range r.protocols {
-						select {
-						case proto.sessionEvents <- sessionEvent{kind: sessionConnectedEvent, host: host}:
-						case <-ctx.Done():
-							return
-						}
-					}
-				case *net.SessionDisconnected:
-					host := e.Host()
-					for _, proto := range r.protocols {
-						select {
-						case proto.sessionEvents <- sessionEvent{kind: sessionDisconnectedEvent, host: host}:
-						case <-ctx.Done():
-							return
-						}
-					}
+				if !r.dispatchSessionEvent(ctx, ev) {
+					return
 				}
 			}
 		}
 	}()
 }
 
+// dispatchSessionEvent translates a SessionLayer event into the runtime's
+// internal sessionEvent kind and fans it out to every registered protocol.
+// Returns false if the runtime context fired during fanout, signalling the
+// caller to exit its goroutine.
+func (r *Runtime) dispatchSessionEvent(ctx context.Context, ev net.SessionEvent) bool {
+	switch e := ev.(type) {
+	case *net.SessionConnected:
+		return r.fanoutSessionEvent(ctx, sessionConnectedEvent, e.Host())
+	case *net.SessionDisconnected:
+		return r.fanoutSessionEvent(ctx, sessionDisconnectedEvent, e.Host())
+	}
+	return true
+}
+
+// fanoutSessionEvent delivers (kind, host) into every protocol's sessionEvents
+// channel, ctx-guarded so a slow consumer or shutdown doesn't wedge the
+// caller. Returns false on ctx cancellation.
+func (r *Runtime) fanoutSessionEvent(ctx context.Context, kind sessionEventType, host net.Host) bool {
+	for _, proto := range r.protocols {
+		select {
+		case proto.sessionEvents <- sessionEvent{kind: kind, host: host}:
+		case <-ctx.Done():
+			return false
+		}
+	}
+	return true
+}
+
 type senderSetter interface {
 	SetSender(net.Host)
 }
 
+// parseAppHeader pulls the [ProtocolID(uint16 LE) || MessageID(uint16 LE)]
+// prefix out of an application-layer payload. The remaining bytes in buffer
+// belong to the message-specific payload.
+func parseAppHeader(buffer *bytes.Buffer) (protocolID, messageID uint16, err error) {
+	if err = binary.Read(buffer, binary.LittleEndian, &protocolID); err != nil {
+		return 0, 0, fmt.Errorf("read protocolID: %w", err)
+	}
+	if err = binary.Read(buffer, binary.LittleEndian, &messageID); err != nil {
+		return protocolID, 0, fmt.Errorf("read messageID: %w", err)
+	}
+	return protocolID, messageID, nil
+}
+
 func (r *Runtime) processMessage(buffer bytes.Buffer, from net.Host) {
 	logger := r.Logger()
-	var protocolID, messageID uint16
-	if err := binary.Read(&buffer, binary.LittleEndian, &protocolID); err != nil {
-		logger.Error("failed to read protocolID from message header",
-			"from", from.ToString(),
-			"err", err,
-		)
-		return
-	}
-	if err := binary.Read(&buffer, binary.LittleEndian, &messageID); err != nil {
-		logger.Error("failed to read messageID from message header",
+	protocolID, messageID, err := parseAppHeader(&buffer)
+	if err != nil {
+		logger.Error("failed to read message header",
 			"from", from.ToString(),
 			"protocolID", protocolID,
 			"err", err,

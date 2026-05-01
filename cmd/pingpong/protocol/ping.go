@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	PingPongProtocolId = 1
+	PingPongProtocolID = 1
 )
 
 type (
@@ -26,7 +26,7 @@ type (
 
 func NewPingPongProtocol(self *net.Host, peer *net.Host) *PingPongProtocol {
 	return &PingPongProtocol{
-		protocolID: PingPongProtocolId,
+		protocolID: PingPongProtocolID,
 		self:       *self,
 		peer:       *peer,
 	}

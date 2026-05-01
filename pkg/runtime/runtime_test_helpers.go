@@ -2,8 +2,6 @@ package runtime
 
 import (
 	"sync/atomic"
-	"testing"
-	"time"
 
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 )
@@ -154,17 +152,6 @@ func (p *IntegrationProtocol) OnSessionConnected(h net.Host) {
 }
 
 func (p *IntegrationProtocol) OnSessionDisconnected(h net.Host) {}
-
-func waitSessionEventRuntime(t *testing.T, ch chan net.SessionEvent, timeout time.Duration) net.SessionEvent {
-	t.Helper()
-	select {
-	case ev := <-ch:
-		return ev
-	case <-time.After(timeout):
-		t.Fatalf("timed out waiting for SessionEvent")
-		return nil
-	}
-}
 
 // twoSidedProtocol is used by the two-runtime integration test. It connects
 // to its peer on Init, replies once on inbound, and records receipt for the

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -52,9 +53,7 @@ const maxFrameSize uint32 = 16 * 1024 * 1024 // 16MiB
 //
 // The LayerID and Body are produced/consumed by the SessionLayer.
 func encodeFrame(payload []byte) ([]byte, error) {
-	if len(payload) == 0 {
-		// Allow empty payloads, but still send a 0-length frame.
-	}
+	// Empty payloads are allowed and emitted as a 0-length frame.
 	if len(payload) > int(^uint32(0)) {
 		return nil, fmt.Errorf("payload too large: %d bytes", len(payload))
 	}
@@ -285,37 +284,13 @@ func (t *TCPLayer) connectionHandler(conn net.Conn, host Host) {
 			_ = conn.Close()
 			return
 		default:
-			_ = conn.SetReadDeadline(time.Now().Add(time.Second))
-
-			n, err := conn.Read(readBuf)
+			frames, err := t.readFrames(conn, readBuf, recvBuf, host)
 			if err != nil {
-				if ne, ok := err.(net.Error); ok && ne.Timeout() {
-					continue
-				}
-				t.logger.Error("tcp read error, disconnecting", "host", host.ToString(), "err", err)
 				t.disconnect(host)
 				return
 			}
-			if n == 0 {
-				continue
-			}
-
-			if _, err := recvBuf.Write(readBuf[:n]); err != nil {
-				t.logger.Error("tcp recv buffer write failed", "host", host.ToString(), "err", err)
-				t.disconnect(host)
-				return
-			}
-
-			frames, err := decodeFrames(recvBuf)
-			if err != nil {
-				t.logger.Error("tcp frame decode failed, disconnecting", "host", host.ToString(), "err", err)
-				t.outTransportEvents <- &TransportFailed{host: host}
-				t.disconnect(host)
-				return
-			}
-
 			for _, frame := range frames {
-				// Each frame is the payload that upper layers already understand:
+				// Each frame is the payload upper layers already understand:
 				// [LayerID || ProtocolID || MessageID || Contents]
 				data := make([]byte, len(frame))
 				copy(data, frame)
@@ -326,6 +301,39 @@ func (t *TCPLayer) connectionHandler(conn net.Conn, host Host) {
 			}
 		}
 	}
+}
+
+// readFrames performs one round of read+frame-decode against conn. A read
+// timeout returns (nil, nil) so the caller can loop and re-check ctx. Any
+// other error is returned after logging; the caller should disconnect.
+func (t *TCPLayer) readFrames(conn net.Conn, readBuf []byte, recvBuf *bytes.Buffer, host Host) ([][]byte, error) {
+	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+
+	n, err := conn.Read(readBuf)
+	if err != nil {
+		var ne net.Error
+		if errors.As(err, &ne) && ne.Timeout() {
+			return nil, nil
+		}
+		t.logger.Error("tcp read error, disconnecting", "host", host.ToString(), "err", err)
+		return nil, err
+	}
+	if n == 0 {
+		return nil, nil
+	}
+
+	if _, werr := recvBuf.Write(readBuf[:n]); werr != nil {
+		t.logger.Error("tcp recv buffer write failed", "host", host.ToString(), "err", werr)
+		return nil, werr
+	}
+
+	frames, derr := decodeFrames(recvBuf)
+	if derr != nil {
+		t.logger.Error("tcp frame decode failed, disconnecting", "host", host.ToString(), "err", derr)
+		t.outTransportEvents <- &TransportFailed{host: host}
+		return nil, derr
+	}
+	return frames, nil
 }
 
 // concurrency-safe

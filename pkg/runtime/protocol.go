@@ -183,26 +183,30 @@ func (p *ProtoProtocol) eventHandler(ctx context.Context, wg *sync.WaitGroup) {
 		case <-ctx.Done():
 			return
 		case msg := <-p.messageChannel:
-			handler := p.msgHandlers[msg.MessageID()]
-			if handler != nil {
-				handler(msg)
+			if h := p.msgHandlers[msg.MessageID()]; h != nil {
+				h(msg)
 			}
 		case timer := <-p.timerChannel:
-			handler := p.timerHandlers[timer.TimerID()]
-			if handler != nil {
-				handler(timer)
+			if h := p.timerHandlers[timer.TimerID()]; h != nil {
+				h(timer)
 			}
 		case ev := <-p.sessionEvents:
-			switch ev.kind {
-			case sessionConnectedEvent:
-				if h, ok := p.protocol.(SessionConnectedHandler); ok {
-					h.OnSessionConnected(ev.host)
-				}
-			case sessionDisconnectedEvent:
-				if h, ok := p.protocol.(SessionDisconnectedHandler); ok {
-					h.OnSessionDisconnected(ev.host)
-				}
-			}
+			p.deliverSessionEvent(ev)
+		}
+	}
+}
+
+// deliverSessionEvent invokes the protocol's optional session-event
+// handlers (OnSessionConnected / OnSessionDisconnected) when implemented.
+func (p *ProtoProtocol) deliverSessionEvent(ev sessionEvent) {
+	switch ev.kind {
+	case sessionConnectedEvent:
+		if h, ok := p.protocol.(SessionConnectedHandler); ok {
+			h.OnSessionConnected(ev.host)
+		}
+	case sessionDisconnectedEvent:
+		if h, ok := p.protocol.(SessionDisconnectedHandler); ok {
+			h.OnSessionDisconnected(ev.host)
 		}
 	}
 }

@@ -114,11 +114,12 @@ func (c *Config) applyDefaults() {
 // LoadConfig reads a YAML configuration file from path and returns the
 // populated Config with defaults applied.
 func LoadConfig(path string) (*Config, error) {
+	// #nosec G304 -- path is the user-supplied YAML config path passed via the -config flag.
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	data, err := io.ReadAll(f)
 	if err != nil {

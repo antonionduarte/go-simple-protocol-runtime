@@ -26,14 +26,11 @@ func TestTCPLayerConnection(t *testing.T) {
 	firstNode.Connect(second)
 
 	connectCount := 0
-	for {
-		if connectCount == 2 {
-			break
-		}
+	for connectCount < 2 {
 		select {
-		case _ = <-secondNode.OutTransportEvents():
+		case <-secondNode.OutTransportEvents():
 			connectCount++
-		case _ = <-firstNode.OutTransportEvents():
+		case <-firstNode.OutTransportEvents():
 			connectCount++
 		}
 	}
@@ -66,14 +63,11 @@ func TestTCPLayerSendMessage(t *testing.T) {
 	firstNode.Connect(second)
 
 	connectCount := 0
-	for {
-		if connectCount == 2 {
-			break
-		}
+	for connectCount < 2 {
 		select {
-		case _ = <-secondNode.OutTransportEvents():
+		case <-secondNode.OutTransportEvents():
 			connectCount++
-		case _ = <-firstNode.OutTransportEvents():
+		case <-firstNode.OutTransportEvents():
 			connectCount++
 		}
 	}
@@ -118,10 +112,7 @@ func TestTCPLayerFramingMultipleMessages(t *testing.T) {
 	firstNode.Connect(second)
 
 	connectCount := 0
-	for {
-		if connectCount == 2 {
-			break
-		}
+	for connectCount < 2 {
 		select {
 		case <-secondNode.OutTransportEvents():
 			connectCount++
@@ -166,14 +157,11 @@ func TestDisconnect(t *testing.T) {
 	firstNode.Connect(second)
 
 	connectCount := 0
-	for {
-		if connectCount == 2 {
-			break
-		}
+	for connectCount < 2 {
 		select {
-		case _ = <-secondNode.OutTransportEvents():
+		case <-secondNode.OutTransportEvents():
 			connectCount++
-		case _ = <-firstNode.OutTransportEvents():
+		case <-firstNode.OutTransportEvents():
 			connectCount++
 		}
 	}
@@ -181,14 +169,11 @@ func TestDisconnect(t *testing.T) {
 	firstNode.Disconnect(second)
 
 	disconnectCount := 0
-	for {
-		if disconnectCount == 2 {
-			break
-		}
+	for disconnectCount < 2 {
 		select {
-		case _ = <-secondNode.OutTransportEvents():
+		case <-secondNode.OutTransportEvents():
 			disconnectCount++
-		case _ = <-firstNode.OutTransportEvents():
+		case <-firstNode.OutTransportEvents():
 			disconnectCount++
 		}
 	}
@@ -219,10 +204,7 @@ func TestTCPLayerCancelClosesConnections(t *testing.T) {
 	firstNode.Connect(second)
 
 	connectCount := 0
-	for {
-		if connectCount == 2 {
-			break
-		}
+	for connectCount < 2 {
 		select {
 		case <-secondNode.OutTransportEvents():
 			connectCount++

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+#
+# pre-push hook — runs before `git push` to catch correctness issues
+# locally. Commits are unblocked; the local gate lives here on push
+# instead.
+#
+# Runs:
+#   1. go build ./...
+#   2. go test -race ./...
+#
+# Lint is NOT run here — CI is authoritative for lint. Keeping the hook
+# focused on correctness keeps the push cycle fast enough that
+# developers don't reach for --no-verify.
+#
+# Install with:  make hooks-install
+# Bypass with:   git push --no-verify   (authoritative gate is CI)
+
+set -e
+
+cd "$(git rev-parse --show-toplevel)"
+
+echo "==> go build ./..."
+go build ./...
+
+echo "==> go test -race ./..."
+go test -race ./...

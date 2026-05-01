@@ -48,12 +48,6 @@ type (
 	// HandshakeType identifies the type of a session-layer handshake message.
 	HandshakeType byte
 
-	// HandshakeMessage is used internally to pass around events or messages during handshake.
-	HandshakeMessage struct {
-		event      TransportEvent
-		sessionMsg SessionMessage
-	}
-
 	// sessionConn models a single logical session with a peer and owns the
 	// handshake state machine for that peer.
 	sessionConn struct {
@@ -481,7 +475,9 @@ func (s *SessionLayer) transportMessageHandler(msg TransportMessage) {
 	sessionMsg := deserializeTransportMessage(msg)
 	switch sessionMsg.layer {
 	case Application:
-		s.logger.Debug("session application message received", "from", sessionMsg.host.ToString(), "bytes", sessionMsg.Msg.Len())
+		s.logger.Debug("session application message received",
+			"from", sessionMsg.host.ToString(),
+			"bytes", sessionMsg.Msg.Len())
 		select {
 		case s.outMessages <- sessionMsg:
 		case <-s.ctx.Done():
@@ -521,19 +517,9 @@ func (s *SessionLayer) connectClient(h Host) {
 	})
 }
 
-func (s *SessionLayer) connectServer(h Host) {
-	s.logger.Info("session initiating server-side session", "remote", h.ToString())
-	s.withSession(h, Host{}, func(sc *sessionConn) {
-		if sc.state == SessionStateIdle {
-			sc.state = SessionStateHandshakingServer
-		}
-	})
-}
-
 func (s *SessionLayer) disconnect(h Host) {
 	s.transport.Disconnect(h)
-
-	_ = s.cleanupServerMapping(h)
+	s.cleanupServerMapping(h)
 }
 
 func (s *SessionLayer) send(msg bytes.Buffer, sendTo Host) {
@@ -615,16 +601,13 @@ func (s *SessionLayer) setServerMapping(transport Host, logical Host) {
 	s.logicalToTransport[logical] = transport
 }
 
-func (s *SessionLayer) cleanupServerMapping(h Host) bool {
+func (s *SessionLayer) cleanupServerMapping(h Host) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	changed := false
 	if logical, ok := s.transportToLogical[h]; ok {
 		delete(s.transportToLogical, h)
 		delete(s.logicalToTransport, logical)
-		changed = true
 	}
-	return changed
 }
 
 // resolveUnderlyingHost returns the transport host associated with the given

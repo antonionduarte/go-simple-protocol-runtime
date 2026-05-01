@@ -1,5 +1,6 @@
 .PHONY: build test test-race run \
 	lint lint-fix lint-new \
+	modernize modernize-check \
 	coverage vulncheck \
 	tools-install hooks-install
 
@@ -46,6 +47,17 @@ coverage:
 
 vulncheck:
 	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+# Apply gopls' modernize fixes in place (sync.WaitGroup.Go, range-over-int,
+# t.Context(), maps/slices helpers, etc.). Idempotent — safe to re-run.
+# `go modernize` itself doesn't exist; the tool ships inside gopls.
+modernize:
+	go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest -fix ./...
+
+# Same analyzer in report-only mode. Useful in CI to fail when new code
+# would be modernized.
+modernize-check:
+	go run golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize@latest ./...
 
 # -----------------------------------------------------------------------
 # One-shot setup: install developer-side quality tools and git hooks

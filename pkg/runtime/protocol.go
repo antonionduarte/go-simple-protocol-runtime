@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 )
@@ -11,16 +12,14 @@ import (
 // Package runtime exposes the core protocol runtime and the primary APIs that
 // protocol implementations interact with. Most user code should depend on the
 // abstract interfaces here (Protocol, ProtocolContext, Message, Serializer,
-// Timer) rather than on the concrete Runtime type or its globals.
+// Timer) rather than on the concrete Runtime type.
 
 type (
 	// ProtocolContext is the main entry point for protocol implementations.
 	// It is provided to Protocol.Start and Protocol.Init and should be used
 	// to register handlers, connect/disconnect from peers, send messages,
-	// access the protocol-scoped logger, and query the local Host identity.
-	//
-	// Protocol authors should prefer using this interface over calling
-	// package-level helpers or touching the Runtime singleton directly.
+	// schedule timers, access the protocol-scoped logger, and query the
+	// local Host identity.
 	ProtocolContext interface {
 		RegisterMessageHandler(messageID int, handler func(Message))
 		RegisterMessageSerializer(messageID int, serializer Serializer)
@@ -30,8 +29,11 @@ type (
 		Disconnect(host net.Host)
 		Send(msg Message, to net.Host) error
 
-		Logger() *slog.Logger
+		SetupTimer(timer Timer, duration time.Duration)
+		SetupPeriodicTimer(timer Timer, duration time.Duration)
+		CancelTimer(timerID int)
 
+		Logger() *slog.Logger
 		Self() net.Host
 	}
 
@@ -49,6 +51,7 @@ type (
 	ProtoProtocol struct {
 		protocol       Protocol
 		self           net.Host
+		runtime        *Runtime
 		timerChannel   chan Timer
 		messageChannel chan Message
 		sessionEvents  chan sessionEvent
@@ -71,14 +74,20 @@ func NewProtoProtocol(protocol Protocol, self net.Host) *ProtoProtocol {
 	return &ProtoProtocol{
 		protocol:       protocol,
 		self:           self,
-		timerChannel:   make(chan Timer, 1),
-		messageChannel: make(chan Message, 1),
-		sessionEvents:  make(chan sessionEvent, 1),
+		timerChannel:   make(chan Timer, protoProtocolChannelBuffer),
+		messageChannel: make(chan Message, protoProtocolChannelBuffer),
+		sessionEvents:  make(chan sessionEvent, protoProtocolChannelBuffer),
 		msgSerializers: make(map[int]Serializer),
 		msgHandlers:    make(map[int]func(msg Message)),
 		timerHandlers:  make(map[int]func(timer Timer)),
 	}
 }
+
+const protoProtocolChannelBuffer = 16
+
+// bindRuntime is invoked by Runtime.RegisterProtocol so that the protocol
+// can later resolve its hosting runtime when ensureContext fires.
+func (p *ProtoProtocol) bindRuntime(r *Runtime) { p.runtime = r }
 
 func (p *ProtoProtocol) Start(ctx context.Context, wg *sync.WaitGroup) {
 	wg.Add(1)
@@ -104,33 +113,28 @@ func (p *ProtoProtocol) RegisterTimerHandler(timer Timer, handler func(Timer)) {
 	p.timerHandlers[timer.TimerID()] = handler
 }
 
-func (p *ProtoProtocol) ProtocolID() int {
-	return p.protocol.ProtocolID()
-}
+func (p *ProtoProtocol) ProtocolID() int { return p.protocol.ProtocolID() }
 
-// Self returns the logical host identity for this protocol instance.
-func (p *ProtoProtocol) Self() net.Host {
-	return p.self
-}
+func (p *ProtoProtocol) Self() net.Host { return p.self }
 
-func (p *ProtoProtocol) TimerChannel() chan Timer {
-	return p.timerChannel
-}
+func (p *ProtoProtocol) TimerChannel() chan Timer { return p.timerChannel }
 
-func (p *ProtoProtocol) MessageChannel() chan Message {
-	return p.messageChannel
-}
+func (p *ProtoProtocol) MessageChannel() chan Message { return p.messageChannel }
 
-// ensureContext lazily initializes the ProtocolContext for this ProtoProtocol.
+// ensureContext lazily initializes the ProtocolContext. The protocol must
+// have been registered with a Runtime via RegisterProtocol before Start or
+// Init is called.
 func (p *ProtoProtocol) ensureContext() {
 	if p.ctx != nil {
 		return
 	}
-	runtime := GetRuntimeInstance()
-	baseLogger := runtime.Logger()
+	if p.runtime == nil {
+		panic("runtime: protocol used before being registered with a Runtime")
+	}
+	baseLogger := p.runtime.Logger()
 	p.ctx = &protocolContext{
 		proto:   p,
-		runtime: runtime,
+		runtime: p.runtime,
 		logger: baseLogger.With(
 			"component", "protocol",
 			"protocolID", p.ProtocolID(),
@@ -153,25 +157,23 @@ func (c *protocolContext) RegisterTimerHandler(timer Timer, handler func(Timer))
 	c.proto.timerHandlers[timer.TimerID()] = handler
 }
 
-func (c *protocolContext) Connect(host net.Host) {
-	Connect(host)
-}
-
-func (c *protocolContext) Disconnect(host net.Host) {
-	Disconnect(host)
-}
+func (c *protocolContext) Connect(host net.Host)    { c.runtime.connect(host) }
+func (c *protocolContext) Disconnect(host net.Host) { c.runtime.disconnect(host) }
 
 func (c *protocolContext) Send(msg Message, to net.Host) error {
-	return SendMessage(msg, to)
+	return c.runtime.sendMessage(msg, to)
 }
 
-func (c *protocolContext) Self() net.Host {
-	return c.proto.self
+func (c *protocolContext) SetupTimer(timer Timer, duration time.Duration) {
+	c.runtime.setupTimer(timer, duration)
 }
+func (c *protocolContext) SetupPeriodicTimer(timer Timer, duration time.Duration) {
+	c.runtime.setupPeriodicTimer(timer, duration)
+}
+func (c *protocolContext) CancelTimer(timerID int) { c.runtime.cancelTimer(timerID) }
 
-func (c *protocolContext) Logger() *slog.Logger {
-	return c.logger
-}
+func (c *protocolContext) Self() net.Host       { return c.proto.self }
+func (c *protocolContext) Logger() *slog.Logger { return c.logger }
 
 func (p *ProtoProtocol) eventHandler(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()

@@ -1,6 +1,7 @@
 package net
 
 import (
+	"bytes"
 	"context"
 	"testing"
 	"time"
@@ -32,13 +33,13 @@ func TestSessionLayerSuccessfulHandshake(t *testing.T) {
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	defer cancel2()
 
-	tcp1 := NewTCPLayer(h1, ctx1)
-	tcp2 := NewTCPLayer(h2, ctx2)
+	tcp1 := NewTCPLayer(h1, ctx1, 0)
+	tcp2 := NewTCPLayer(h2, ctx2, 0)
 	defer tcp1.Cancel()
 	defer tcp2.Cancel()
 
-	s1 := NewSessionLayer(tcp1, h1, ctx1)
-	s2 := NewSessionLayer(tcp2, h2, ctx2)
+	s1 := NewSessionLayer(tcp1, h1, ctx1, 0, 0)
+	s2 := NewSessionLayer(tcp2, h2, ctx2, 0, 0)
 
 	// initiate session from h1 to h2
 	s1.Connect(h2)
@@ -69,10 +70,10 @@ func TestSessionLayerFailedConnection(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	tcp := NewTCPLayer(hClient, ctx)
+	tcp := NewTCPLayer(hClient, ctx, 0)
 	defer tcp.Cancel()
 
-	s := NewSessionLayer(tcp, hClient, ctx)
+	s := NewSessionLayer(tcp, hClient, ctx, 0, 0)
 
 	// Connect to a host that has no listener
 	s.Connect(hNoServer)
@@ -87,6 +88,34 @@ func TestSessionLayerFailedConnection(t *testing.T) {
 	}
 }
 
+// TestSessionLayer_SendAfterCancel ensures that Connect/Disconnect/Send
+// calls arriving after Cancel do not block indefinitely. Pre-fix, these
+// methods did raw blocking sends on unbuffered channels whose only consumer
+// (the handler goroutine) had already exited, deadlocking any caller that
+// happened to be in flight when Cancel ran — including a protocol's
+// ctx.Send invoked during shutdown.
+func TestSessionLayer_SendAfterCancel(t *testing.T) {
+	self := NewHost(7250, "127.0.0.1")
+	tcp := NewTCPLayer(self, context.Background(), 0)
+	defer tcp.Cancel()
+	s := NewSessionLayer(tcp, self, context.Background(), 0, 0)
+	s.Cancel()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		s.Connect(NewHost(1, "127.0.0.1"))
+		s.Disconnect(NewHost(2, "127.0.0.1"))
+		var buf bytes.Buffer
+		s.Send(buf, NewHost(3, "127.0.0.1"))
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatalf("Connect/Disconnect/Send after Cancel blocked")
+	}
+}
+
 // TestSessionLayerCancelStopsEvents ensures that calling Cancel on the
 // SessionLayer stops the handler loop and no further events are emitted.
 func TestSessionLayerCancelStopsEvents(t *testing.T) {
@@ -95,10 +124,10 @@ func TestSessionLayerCancelStopsEvents(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	tcp := NewTCPLayer(h, ctx)
+	tcp := NewTCPLayer(h, ctx, 0)
 	defer tcp.Cancel()
 
-	s := NewSessionLayer(tcp, h, ctx)
+	s := NewSessionLayer(tcp, h, ctx, 0, 0)
 
 	// Immediately cancel the session layer; there should be no events after this.
 	s.Cancel()

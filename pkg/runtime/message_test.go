@@ -8,7 +8,7 @@ import (
 
 type failingSerializer struct{}
 
-func (f *failingSerializer) Serialize() ([]byte, error) {
+func (f *failingSerializer) Serialize(_ Message) ([]byte, error) {
 	return nil, assertError{}
 }
 
@@ -29,8 +29,7 @@ func (m *failingMessage) Serializer() Serializer { return m.serializer }
 func (m *failingMessage) Sender() net.Host       { return m.sender }
 
 func TestSendMessage_SerializeError(t *testing.T) {
-	resetRuntimeForTests()
-	_ = GetRuntimeInstance() // ensure runtime is initialized
+	rt := New(net.NewHost(0, "127.0.0.1"))
 
 	msg := &failingMessage{
 		id:         1,
@@ -40,7 +39,7 @@ func TestSendMessage_SerializeError(t *testing.T) {
 	}
 	to := net.NewHost(8000, "127.0.0.1")
 
-	if err := SendMessage(msg, to); err == nil {
-		t.Fatalf("expected SendMessage to return error when Serialize fails")
+	if err := rt.sendMessage(msg, to); err == nil {
+		t.Fatalf("expected sendMessage to return error when Serialize fails")
 	}
 }

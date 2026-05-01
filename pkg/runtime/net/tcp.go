@@ -24,6 +24,7 @@ type (
 		mutex              sync.Mutex
 		self               Host
 
+		listener   net.Listener
 		cancelFunc context.CancelFunc
 		ctx        context.Context
 
@@ -98,10 +99,10 @@ func decodeFrames(buf *bytes.Buffer) ([][]byte, error) {
 	}
 }
 
-func NewTCPLayer(self Host, ctx context.Context) *TCPLayer {
+func NewTCPLayer(self Host, ctx context.Context, outBuf int) *TCPLayer {
 	ctx, cancel := context.WithCancel(ctx)
 	logger := slog.Default().With("component", "transport", "transport", "tcp")
-	outBuf := rtconfig.TransportOutBuffer()
+	outBuf = rtconfig.TransportOutBufferOr(outBuf)
 
 	tcpLayer := &TCPLayer{
 		outChannel:         make(chan TransportMessage, outBuf),
@@ -117,24 +118,34 @@ func NewTCPLayer(self Host, ctx context.Context) *TCPLayer {
 	}
 
 	logger.Info("tcp layer starting", "self", self.ToString())
-	tcpLayer.listen()     // start listening
-	go tcpLayer.handler() // start main event loop
+	tcpLayer.listen()              // start listening
+	go tcpLayer.handler()          // start main event loop
+	go tcpLayer.closeOnCtxDone()   // ensure resources release on ctx cancel
 	return tcpLayer
 }
 
 func (t *TCPLayer) Send(msg TransportMessage, sendTo Host) {
 	t.logger.Debug("tcp send requested", "to", sendTo.ToString(), "bytes", msg.Msg.Len())
-	t.sendChan <- TCPSendMessage{sendTo, msg}
+	select {
+	case t.sendChan <- TCPSendMessage{sendTo, msg}:
+	case <-t.ctx.Done():
+	}
 }
 
 func (t *TCPLayer) Connect(host Host) {
-	t.logger.Info("tcp connect requested", "to", host.ToString())
-	t.connectChan <- host
+	t.logger.Debug("tcp connect requested", "to", host.ToString())
+	select {
+	case t.connectChan <- host:
+	case <-t.ctx.Done():
+	}
 }
 
 func (t *TCPLayer) Disconnect(host Host) {
-	t.logger.Info("tcp disconnect requested", "host", host.ToString())
-	t.disconnectChan <- host
+	t.logger.Debug("tcp disconnect requested", "host", host.ToString())
+	select {
+	case t.disconnectChan <- host:
+	case <-t.ctx.Done():
+	}
 }
 
 func (t *TCPLayer) OutChannel() chan TransportMessage {
@@ -147,9 +158,17 @@ func (t *TCPLayer) OutTransportEvents() chan TransportEvent {
 
 func (t *TCPLayer) Cancel() {
 	t.cancelFunc()
-	close(t.sendChan)
-	close(t.connectChan)
-	close(t.disconnectChan)
+}
+
+// closeOnCtxDone is started by NewTCPLayer to ensure the listener and any
+// active connections are closed as soon as the layer's context is cancelled
+// — whether that happens via Cancel() or because the parent context was
+// cancelled. This makes ctx the single source of truth for liveness.
+func (t *TCPLayer) closeOnCtxDone() {
+	<-t.ctx.Done()
+	if t.listener != nil {
+		_ = t.listener.Close()
+	}
 	t.mutex.Lock()
 	for host, conn := range t.activeConnections {
 		_ = conn.Close()
@@ -168,13 +187,18 @@ func (t *TCPLayer) send(networkMessage TransportMessage, sendTo Host) {
 	if err != nil {
 		t.logger.Error("tcp encode frame failed", "host", sendTo.ToString(), "err", err)
 		t.outTransportEvents <- &TransportFailed{host: sendTo}
-		t.Disconnect(sendTo)
+		// Call the internal disconnect directly: invoking the public
+		// Disconnect would try to push onto disconnectChan, which is drained
+		// by the handler goroutine that is currently inside this very send()
+		// call — a deadlock until ctx cancellation. The lowercase form takes
+		// the mutex and emits the event synchronously.
+		t.disconnect(sendTo)
 		return
 	}
 
 	if _, err := conn.Write(frame); err != nil {
 		t.outTransportEvents <- &TransportFailed{host: sendTo}
-		t.Disconnect(sendTo)
+		t.disconnect(sendTo)
 	}
 }
 
@@ -221,6 +245,7 @@ func (t *TCPLayer) listen() {
 		t.logger.Error("tcp listen failed", "self", t.self.ToString(), "err", err)
 		return
 	}
+	t.listener = ln
 	t.logger.Info("tcp listening", "self", t.self.ToString())
 	go t.listenerHandler(ln)
 }
@@ -242,7 +267,7 @@ func (t *TCPLayer) listenerHandler(listener net.Listener) {
 		remote := conn.RemoteAddr().(*net.TCPAddr)
 		host := NewHost(remote.Port, remote.IP.String())
 
-		slog.Info("tcp inbound connection accepted", "remote", host.ToString())
+		t.logger.Info("tcp inbound connection accepted", "remote", host.ToString())
 
 		t.addActiveConn(conn, host)
 		t.outTransportEvents <- &TransportConnected{host: host}

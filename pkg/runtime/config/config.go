@@ -41,57 +41,52 @@ type Config struct {
 	Runtime RuntimeConfig `yaml:"runtime"`
 }
 
-var global *Config
-
-func SetGlobalConfig(cfg *Config) {
-	global = cfg
-}
-
-func GlobalConfig() *Config {
-	return global
-}
-
+// Default channel buffer sizes. Callers that don't have a specific value in
+// mind can use these directly, or pass a user-provided value through one of
+// the *BufferOr helpers below to fall back to a default when the user value
+// is zero.
 const (
-	defaultRuntimeMsgTimerBuffer = 1
-	defaultTransportOutBuffer    = 10
-	defaultSessionEventsBuffer   = 0
-	defaultSessionMessagesBuffer = 0
+	DefaultRuntimeMsgTimerBuffer = 16
+	DefaultTransportOutBuffer    = 16
+	DefaultSessionEventsBuffer   = 16
+	DefaultSessionMessagesBuffer = 16
 )
 
-// RuntimeMsgTimerBuffer returns the buffer size for the runtime's internal
-// msg/timer channels, falling back to a sensible default if unset.
-func RuntimeMsgTimerBuffer() int {
-	if global != nil && global.Runtime.ChannelBuffer > 0 {
-		return global.Runtime.ChannelBuffer
+// RuntimeMsgTimerBufferOr returns the runtime msg/timer channel buffer,
+// preferring the caller-provided value when non-zero and otherwise falling
+// back to DefaultRuntimeMsgTimerBuffer.
+func RuntimeMsgTimerBufferOr(n int) int {
+	if n > 0 {
+		return n
 	}
-	return defaultRuntimeMsgTimerBuffer
+	return DefaultRuntimeMsgTimerBuffer
 }
 
-// TransportOutBuffer returns the buffer size for transport-layer outward
-// channels (outChannel, outTransportEvents), falling back to defaults.
-func TransportOutBuffer() int {
-	if global != nil && global.Runtime.ChannelBuffer > 0 {
-		return global.Runtime.ChannelBuffer
+// TransportOutBufferOr returns the transport out-channel buffer, preferring
+// the caller-provided value when non-zero.
+func TransportOutBufferOr(n int) int {
+	if n > 0 {
+		return n
 	}
-	return defaultTransportOutBuffer
+	return DefaultTransportOutBuffer
 }
 
-// SessionEventsBuffer returns the buffer size for session-layer event
-// channels, falling back to defaults.
-func SessionEventsBuffer() int {
-	if global != nil && global.Runtime.ChannelBuffer > 0 {
-		return global.Runtime.ChannelBuffer
+// SessionEventsBufferOr returns the session events buffer, preferring the
+// caller-provided value when non-zero.
+func SessionEventsBufferOr(n int) int {
+	if n > 0 {
+		return n
 	}
-	return defaultSessionEventsBuffer
+	return DefaultSessionEventsBuffer
 }
 
-// SessionMessagesBuffer returns the buffer size for session-layer message
-// channels, falling back to defaults.
-func SessionMessagesBuffer() int {
-	if global != nil && global.Runtime.ChannelBuffer > 0 {
-		return global.Runtime.ChannelBuffer
+// SessionMessagesBufferOr returns the session messages buffer, preferring
+// the caller-provided value when non-zero.
+func SessionMessagesBufferOr(n int) int {
+	if n > 0 {
+		return n
 	}
-	return defaultSessionMessagesBuffer
+	return DefaultSessionMessagesBuffer
 }
 
 func defaultLoggingConfig() LoggingConfig {

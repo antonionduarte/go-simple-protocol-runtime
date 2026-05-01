@@ -32,7 +32,10 @@ func TestSerializeDeserializeTransportMessage_RoundTrip(t *testing.T) {
 	}
 
 	// Session message body: handshake payload (using encodeHello)
-	helloPayload := encodeHello(host)
+	helloPayload, err := encodeHello(host)
+	if err != nil {
+		t.Fatalf("encodeHello: %v", err)
+	}
 	sessMsg := SessionMessage{
 		host:  host,
 		layer: Session,

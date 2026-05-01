@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"log/slog"
 
 	"github.com/antonionduarte/go-simple-protocol-runtime/cmd/pingpong/protocol"
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime"
@@ -33,30 +34,35 @@ func main() {
 		panic(err)
 	}
 
-	logger := runtime.ApplyConfig(cfg)
-	instance := runtime.GetRuntimeInstance()
+	logger := runtime.NewLoggerFromConfig(cfg.Logging)
+	slog.SetDefault(logger)
 
 	myself := net.NewHost(*selfPort, *selfIP)
 	peer := net.NewHost(*peerPort, *peerIP)
 
-	selfStr := (&myself).ToString()
-	peerStr := (&peer).ToString()
 	logger.Info("starting pingpong node",
 		"role", "node",
-		"self", selfStr,
-		"peer", peerStr,
+		"self", (&myself).ToString(),
+		"peer", (&peer).ToString(),
 	)
 
-	pingpong := runtime.NewProtoProtocol(protocol.NewPingPongProtocol(&myself, &peer), myself)
-	instance.RegisterProtocol(pingpong)
+	rt := runtime.New(myself,
+		runtime.WithLogger(logger),
+		runtime.WithChannelBuffer(cfg.Runtime.ChannelBuffer),
+	)
 
 	ctx := context.Background()
-	tcp := net.NewTCPLayer(myself, ctx)
-	session := net.NewSessionLayer(tcp, myself, ctx)
-	instance.RegisterNetworkLayer(tcp)
-	instance.RegisterSessionLayer(session)
+	tcp := net.NewTCPLayer(myself, ctx, cfg.Runtime.ChannelBuffer)
+	session := net.NewSessionLayer(tcp, myself, ctx, cfg.Runtime.ChannelBuffer, cfg.Runtime.ChannelBuffer)
+	rt.RegisterNetworkLayer(tcp)
+	rt.RegisterSessionLayer(session)
+	rt.RegisterProtocol(runtime.NewProtoProtocol(
+		protocol.NewPingPongProtocol(&myself, &peer), myself,
+	))
 
-	instance.Start()
+	if err := rt.Start(); err != nil {
+		panic(err)
+	}
 
 	select {}
 }

@@ -1,17 +1,12 @@
 package runtime
 
 import (
-	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 )
-
-func resetRuntimeForTests() {
-	instance = nil
-	once = sync.Once{}
-}
 
 type MockProtocol struct {
 	StartCalled bool
@@ -97,12 +92,14 @@ var _ Message = (*localMessage)(nil)
 
 type localSerializer struct{}
 
-func (s *localSerializer) Serialize() ([]byte, error) {
+func (s *localSerializer) Serialize(_ Message) ([]byte, error) {
 	return nil, nil
 }
 
 func (s *localSerializer) Deserialize(data []byte) (Message, error) {
-	return &localMessage{}, nil
+	// localSerializer is used for messageID=1 in tests; preserve that id so
+	// the protocol's handler dispatch on the receiving side actually fires.
+	return &localMessage{id: 1}, nil
 }
 
 type testSerializer struct {
@@ -110,7 +107,7 @@ type testSerializer struct {
 	err error
 }
 
-func (s *testSerializer) Serialize() ([]byte, error) {
+func (s *testSerializer) Serialize(_ Message) ([]byte, error) {
 	return nil, nil
 }
 
@@ -126,12 +123,16 @@ type IntegrationProtocol struct {
 	ProtoID  int
 	SelfHost net.Host
 	Peer     net.Host
+
+	ctx ProtocolContext
 }
 
 func (p *IntegrationProtocol) Start(ctx ProtocolContext) {
+	p.ctx = ctx
 }
 
 func (p *IntegrationProtocol) Init(ctx ProtocolContext) {
+	p.ctx = ctx
 	ctx.Connect(p.Peer)
 }
 
@@ -147,7 +148,9 @@ func (p *IntegrationProtocol) OnSessionConnected(h net.Host) {
 		pid:    p.ProtoID,
 		sender: p.SelfHost,
 	}
-	_ = SendMessage(msg, p.Peer)
+	if p.ctx != nil {
+		_ = p.ctx.Send(msg, p.Peer)
+	}
 }
 
 func (p *IntegrationProtocol) OnSessionDisconnected(h net.Host) {}
@@ -161,4 +164,43 @@ func waitSessionEventRuntime(t *testing.T, ch chan net.SessionEvent, timeout tim
 		t.Fatalf("timed out waiting for SessionEvent")
 		return nil
 	}
+}
+
+// twoSidedProtocol is used by the two-runtime integration test. It connects
+// to its peer on Init, replies once on inbound, and records receipt for the
+// test to observe.
+type twoSidedProtocol struct {
+	ProtoID  int
+	SelfHost net.Host
+	Peer     net.Host
+
+	ctx      ProtocolContext
+	received atomic.Bool
+}
+
+func (p *twoSidedProtocol) Start(ctx ProtocolContext) {
+	p.ctx = ctx
+	ctx.RegisterMessageSerializer(1, &localSerializer{})
+	ctx.RegisterMessageHandler(1, p.handle)
+}
+
+func (p *twoSidedProtocol) Init(ctx ProtocolContext) {
+	p.ctx = ctx
+	ctx.Connect(p.Peer)
+}
+
+func (p *twoSidedProtocol) ProtocolID() int { return p.ProtoID }
+func (p *twoSidedProtocol) Self() net.Host  { return p.SelfHost }
+
+func (p *twoSidedProtocol) OnSessionConnected(h net.Host) {
+	if !net.CompareHost(h, p.Peer) || p.ctx == nil {
+		return
+	}
+	_ = p.ctx.Send(&localMessage{id: 1, pid: p.ProtoID, sender: p.SelfHost}, p.Peer)
+}
+
+func (p *twoSidedProtocol) OnSessionDisconnected(net.Host) {}
+
+func (p *twoSidedProtocol) handle(msg Message) {
+	p.received.Store(true)
 }

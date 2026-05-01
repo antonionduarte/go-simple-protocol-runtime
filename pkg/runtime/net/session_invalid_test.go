@@ -13,10 +13,10 @@ func TestSessionLayer_UnknownLayerIdentifier(t *testing.T) {
 
 	// Use a mock transport: we can re-use TCPLayer with no external peers by
 	// not connecting anywhere and just feeding messages directly.
-	tcp := NewTCPLayer(self, context.Background())
+	tcp := NewTCPLayer(self, context.Background(), 0)
 	defer tcp.Cancel()
 
-	session := NewSessionLayer(tcp, self, context.Background())
+	session := NewSessionLayer(tcp, self, context.Background(), 0, 0)
 
 	// Construct a TransportMessage whose payload has an invalid LayerIdentifier.
 	payload := bytes.NewBuffer(nil)

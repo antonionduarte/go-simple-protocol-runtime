@@ -20,8 +20,8 @@ func TestTCPLayerConnection(t *testing.T) {
 	defer firstCancel()
 	defer secondCancel()
 
-	firstNode := NewTCPLayer(first, firstCtx)
-	secondNode := NewTCPLayer(second, secondCtx)
+	firstNode := NewTCPLayer(first, firstCtx, 0)
+	secondNode := NewTCPLayer(second, secondCtx, 0)
 
 	firstNode.Connect(second)
 
@@ -60,8 +60,8 @@ func TestTCPLayerSendMessage(t *testing.T) {
 	defer firstCancel()
 	defer secondCancel()
 
-	firstNode := NewTCPLayer(first, firstCtx)
-	secondNode := NewTCPLayer(second, secondCtx)
+	firstNode := NewTCPLayer(first, firstCtx, 0)
+	secondNode := NewTCPLayer(second, secondCtx, 0)
 
 	firstNode.Connect(second)
 
@@ -112,8 +112,8 @@ func TestTCPLayerFramingMultipleMessages(t *testing.T) {
 	defer firstCancel()
 	defer secondCancel()
 
-	firstNode := NewTCPLayer(first, firstCtx)
-	secondNode := NewTCPLayer(second, secondCtx)
+	firstNode := NewTCPLayer(first, firstCtx, 0)
+	secondNode := NewTCPLayer(second, secondCtx, 0)
 
 	firstNode.Connect(second)
 
@@ -160,8 +160,8 @@ func TestDisconnect(t *testing.T) {
 	defer firstCancel()
 	defer secondCancel()
 
-	firstNode := NewTCPLayer(first, firstCtx)
-	secondNode := NewTCPLayer(second, secondCtx)
+	firstNode := NewTCPLayer(first, firstCtx, 0)
+	secondNode := NewTCPLayer(second, secondCtx, 0)
 
 	firstNode.Connect(second)
 
@@ -213,8 +213,8 @@ func TestTCPLayerCancelClosesConnections(t *testing.T) {
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	defer cancel2()
 
-	firstNode := NewTCPLayer(first, ctx1)
-	secondNode := NewTCPLayer(second, ctx2)
+	firstNode := NewTCPLayer(first, ctx1, 0)
+	secondNode := NewTCPLayer(second, ctx2, 0)
 
 	firstNode.Connect(second)
 
@@ -243,5 +243,29 @@ func TestTCPLayerCancelClosesConnections(t *testing.T) {
 	}
 	if got := secondNode.activeConnectionCount(); got != 0 {
 		t.Fatalf("expected secondNode to have 0 active connections after Cancel, got %d", got)
+	}
+}
+
+// TestTCPLayer_SendAfterCancel ensures that Send/Connect/Disconnect calls
+// arriving after Cancel do not panic or block indefinitely. Pre-fix, Cancel
+// closed the request channels and any in-flight Send would either panic on
+// send-to-closed-channel or deadlock if the goroutine already exited.
+func TestTCPLayer_SendAfterCancel(t *testing.T) {
+	self := NewHost(7903, "127.0.0.1")
+	node := NewTCPLayer(self, context.Background(), 0)
+	node.Cancel()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		msg := NewTransportMessage(*bytes.NewBuffer([]byte("x")), self)
+		node.Send(msg, NewHost(1, "127.0.0.1"))
+		node.Connect(NewHost(2, "127.0.0.1"))
+		node.Disconnect(NewHost(3, "127.0.0.1"))
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatalf("Send/Connect/Disconnect after Cancel blocked")
 	}
 }

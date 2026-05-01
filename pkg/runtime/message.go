@@ -19,20 +19,22 @@ type (
 
 	// Serializer is responsible for encoding and decoding concrete Message
 	// types. Implementations must obey the following contract:
-	//   - Serialize MUST NOT mutate the Message instance.
+	//   - Serialize MUST NOT mutate the Message instance it receives.
 	//   - Deserialize MUST return a new Message instance of the correct
 	//     concrete type for the given protocol/message ID.
 	Serializer interface {
-		Serialize() ([]byte, error)
+		Serialize(msg Message) ([]byte, error)
 		Deserialize(data []byte) (Message, error)
 	}
 )
 
-func SendMessage(msg Message, sendTo net.Host) error {
-	runtime := GetRuntimeInstance()
-	logger := runtime.Logger()
+// sendMessage serializes the message, prepends the application-level header
+// (ProtocolID || MessageID, both little-endian uint16), and hands the buffer
+// to the session layer for transmission.
+func (r *Runtime) sendMessage(msg Message, sendTo net.Host) error {
+	logger := r.Logger()
 
-	payload, err := msg.Serializer().Serialize()
+	payload, err := msg.Serializer().Serialize(msg)
 	if err != nil {
 		logger.Error("failed to serialize message",
 			"protocolID", msg.ProtocolID(),
@@ -43,8 +45,6 @@ func SendMessage(msg Message, sendTo net.Host) error {
 		return err
 	}
 
-	// Application-level header + payload format:
-	//   [ProtocolID(uint16 LE) || MessageID(uint16 LE) || Payload...]
 	buffer := new(bytes.Buffer)
 
 	protocolID := uint16(msg.ProtocolID())
@@ -71,14 +71,14 @@ func SendMessage(msg Message, sendTo net.Host) error {
 
 	buffer.Write(payload)
 
-	runtime.sessionLayer.Send(*buffer, sendTo)
+	r.sessionLayer.Send(*buffer, sendTo)
 	return nil
 }
 
 func writeUint16(buf *bytes.Buffer, val uint16) error {
 	tmp := make([]byte, 2)
-	tmp[0] = byte(val)      // low byte
-	tmp[1] = byte(val >> 8) // high byte
+	tmp[0] = byte(val)
+	tmp[1] = byte(val >> 8)
 	_, err := buf.Write(tmp)
 	return err
 }

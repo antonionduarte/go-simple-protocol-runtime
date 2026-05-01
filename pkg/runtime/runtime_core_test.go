@@ -7,48 +7,47 @@ import (
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 )
 
-func TestGetRuntimeInstance(t *testing.T) {
-	resetRuntimeForTests()
-	instance1 := GetRuntimeInstance()
-	instance2 := GetRuntimeInstance()
-
-	if instance1 != instance2 {
-		t.Errorf("GetRuntimeInstance should return the same instance, but got two different pointers")
-	}
-}
-
 func TestRegisterProtocol(t *testing.T) {
-	resetRuntimeForTests()
-	runtime := GetRuntimeInstance()
+	testHost := net.NewHost(8080, "127.0.0.1")
+	rt := New(testHost)
 
-	testHost := net.NewHost(8080, "127.0.0.1") // net.Host (value)
 	mockProtocol := &MockProtocol{ProtoID: 123, MockSelf: testHost}
-
 	protoProtocol := NewProtoProtocol(mockProtocol, testHost)
+	rt.RegisterProtocol(protoProtocol)
 
-	runtime.RegisterProtocol(protoProtocol)
-
-	if _, exists := runtime.protocols[mockProtocol.ProtocolID()]; !exists {
+	if _, exists := rt.protocols[mockProtocol.ProtocolID()]; !exists {
 		t.Errorf("Protocol was not registered correctly")
 	}
 }
 
 func TestStartAndCancel(t *testing.T) {
-	resetRuntimeForTests()
-	runtime := GetRuntimeInstance()
+	self := net.NewHost(0, "127.0.0.1")
+	rt := New(self)
 
 	mockNetworkLayer := NewMockNetworkLayer()
-	runtime.RegisterNetworkLayer(mockNetworkLayer)
+	rt.RegisterNetworkLayer(mockNetworkLayer)
+	session := net.NewSessionLayer(mockNetworkLayer, self, context.Background(), 0, 0)
+	rt.RegisterSessionLayer(session)
 
-	self := net.NewHost(0, "127.0.0.1")
-	session := net.NewSessionLayer(mockNetworkLayer, self, context.Background())
-	runtime.RegisterSessionLayer(session)
+	if err := rt.Start(); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
 
-	runtime.Start()
-
-	runtime.Cancel()
+	rt.Cancel()
 
 	if !mockNetworkLayer.CancelCalled {
 		t.Errorf("Expected Cancel to be called on network layer, but it wasn't")
+	}
+}
+
+func TestStart_FailsWithoutLayers(t *testing.T) {
+	rt := New(net.NewHost(0, "127.0.0.1"))
+	if err := rt.Start(); err == nil {
+		t.Fatalf("expected Start to fail without network/session layer registered")
+	}
+
+	rt.RegisterNetworkLayer(NewMockNetworkLayer())
+	if err := rt.Start(); err == nil {
+		t.Fatalf("expected Start to fail without session layer registered")
 	}
 }

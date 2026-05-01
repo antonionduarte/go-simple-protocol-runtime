@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
@@ -13,20 +14,20 @@ import (
 )
 
 type Runtime struct {
-	cancelFunc    func()
-	msgChannel    chan Message
-	timerChannel  chan Timer
-	timerMutex    sync.Mutex
-	wg            sync.WaitGroup
-	ongoingTimers map[int]*time.Timer
-	protocols     map[int]*ProtoProtocol
-	networkLayer  net.TransportLayer
-	sessionLayer  *net.SessionLayer
+	self                  net.Host
+	ctx                   context.Context
+	cancelFunc            func()
+	msgChannel            chan Message
+	timerChannel          chan Timer
+	timerMutex            sync.Mutex
+	wg                    sync.WaitGroup
+	ongoingTimers         map[int]*time.Timer
+	ongoingPeriodicTimers map[int]context.CancelFunc
+	protocols             map[int]*ProtoProtocol
+	networkLayer          net.TransportLayer
+	sessionLayer          *net.SessionLayer
 
 	logger *slog.Logger
-
-	// High-level session callbacks are implemented optionally by protocols
-	// via the interfaces below.
 }
 
 // SessionConnectedHandler can be implemented by a protocol that wants to be
@@ -54,53 +55,52 @@ type sessionEvent struct {
 	host net.Host
 }
 
-var (
-	instance *Runtime
-	once     sync.Once
-)
+// Option configures a Runtime at construction.
+type Option func(*Runtime)
 
-// GetRuntimeInstance returns the singleton Runtime for this process.
-// There is intentionally only one Runtime per process; application code
-// and protocol implementations normally do not need to call this directly
-// and should instead work through higher-level APIs (e.g. ApplyConfig,
-// ProtocolContext, and the helpers in this package).
-func ApplyConfig(cfg *rtconfig.Config) *slog.Logger {
-	if cfg == nil {
-		logger := slog.Default()
-		r := GetRuntimeInstance()
-		r.SetLogger(logger)
-		return logger
-	}
-
-	rtconfig.SetGlobalConfig(cfg)
-	logger := NewLoggerFromConfig(cfg.Logging)
-	slog.SetDefault(logger)
-
-	r := GetRuntimeInstance()
-	r.SetLogger(logger)
-	return logger
-}
-
-func GetRuntimeInstance() *Runtime {
-	once.Do(func() {
-		base := slog.Default().With("component", "runtime")
-		instance = &Runtime{
-			msgChannel:    make(chan Message, rtconfig.RuntimeMsgTimerBuffer()),
-			timerChannel:  make(chan Timer, rtconfig.RuntimeMsgTimerBuffer()),
-			ongoingTimers: make(map[int]*time.Timer),
-			protocols:     make(map[int]*ProtoProtocol),
-			logger:        base,
+// WithLogger overrides the slog.Logger used by the runtime. The runtime
+// rebinds the logger with component=runtime so users don't need to do it
+// themselves.
+func WithLogger(logger *slog.Logger) Option {
+	return func(r *Runtime) {
+		if logger == nil {
+			return
 		}
-	})
-	return instance
+		r.logger = logger.With("component", "runtime")
+	}
 }
 
-func (r *Runtime) SetLogger(logger *slog.Logger) {
-	if logger == nil {
-		logger = slog.Default()
+// WithChannelBuffer sets the buffer size for the runtime's internal message
+// and timer channels. A non-positive value falls back to the package default.
+func WithChannelBuffer(n int) Option {
+	return func(r *Runtime) {
+		buf := rtconfig.RuntimeMsgTimerBufferOr(n)
+		r.msgChannel = make(chan Message, buf)
+		r.timerChannel = make(chan Timer, buf)
 	}
-	r.logger = logger.With("component", "runtime")
 }
+
+// New constructs a Runtime bound to the given local Host. Protocols, the
+// transport layer, and the session layer must be registered before calling
+// Start.
+func New(self net.Host, opts ...Option) *Runtime {
+	defaultBuf := rtconfig.RuntimeMsgTimerBufferOr(0)
+	r := &Runtime{
+		self:                  self,
+		msgChannel:            make(chan Message, defaultBuf),
+		timerChannel:          make(chan Timer, defaultBuf),
+		ongoingTimers:         make(map[int]*time.Timer),
+		ongoingPeriodicTimers: make(map[int]context.CancelFunc),
+		protocols:             make(map[int]*ProtoProtocol),
+		logger:                slog.Default().With("component", "runtime"),
+	}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
+}
+
+func (r *Runtime) Self() net.Host { return r.self }
 
 func (r *Runtime) Logger() *slog.Logger {
 	if r.logger == nil {
@@ -109,12 +109,21 @@ func (r *Runtime) Logger() *slog.Logger {
 	return r.logger
 }
 
-func (r *Runtime) Start() {
-	// Start sets up a fresh background context for this Runtime instance and
-	// launches all long-lived goroutines owned by the runtime (protocol event
-	// loops, session event pump, and the main dispatcher).
+// Start sets up a fresh background context for this Runtime instance and
+// launches all long-lived goroutines owned by the runtime (protocol event
+// loops, session event pump, and the main dispatcher). It returns an error
+// if either the network or session layer was not registered.
+func (r *Runtime) Start() error {
+	if r.networkLayer == nil {
+		return errors.New("runtime: network layer not registered")
+	}
+	if r.sessionLayer == nil {
+		return errors.New("runtime: session layer not registered")
+	}
+
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
+	r.ctx = ctx
 	r.cancelFunc = cancel
 
 	r.Logger().Info("runtime starting")
@@ -125,13 +134,17 @@ func (r *Runtime) Start() {
 
 	r.wg.Add(1)
 	go r.eventHandler(ctx)
+	return nil
 }
 
-func (r *Runtime) StartWithDuration(duration time.Duration) {
-	r.Start()
+func (r *Runtime) StartWithDuration(duration time.Duration) error {
+	if err := r.Start(); err != nil {
+		return err
+	}
 	time.AfterFunc(duration, func() {
 		r.Cancel()
 	})
+	return nil
 }
 
 func (r *Runtime) RegisterNetworkLayer(networkLayer net.TransportLayer) {
@@ -142,23 +155,8 @@ func (r *Runtime) RegisterSessionLayer(sessionLayer *net.SessionLayer) {
 	r.sessionLayer = sessionLayer
 }
 
-func Connect(host net.Host) {
-	runtime := GetRuntimeInstance()
-	if runtime.sessionLayer == nil {
-		panic("Session layer not registered")
-	}
-	runtime.sessionLayer.Connect(host)
-}
-
-func Disconnect(host net.Host) {
-	runtime := GetRuntimeInstance()
-	if runtime.sessionLayer == nil {
-		panic("Session layer not registered")
-	}
-	runtime.sessionLayer.Disconnect(host)
-}
-
 func (r *Runtime) RegisterProtocol(protocol *ProtoProtocol) {
+	protocol.bindRuntime(r)
 	r.protocols[protocol.ProtocolID()] = protocol
 }
 
@@ -166,20 +164,26 @@ func (r *Runtime) GetProtocol(protocolID int) *ProtoProtocol {
 	return r.protocols[protocolID]
 }
 
+// connect / disconnect are the runtime-internal entry points used by
+// ProtocolContext implementations.
+func (r *Runtime) connect(host net.Host)    { r.sessionLayer.Connect(host) }
+func (r *Runtime) disconnect(host net.Host) { r.sessionLayer.Disconnect(host) }
+
 func (r *Runtime) Cancel() {
 	// Cancel tears down the runtime in the following order:
 	//   1. Cancel the runtime context (used by all internal goroutines).
 	//   2. Stop session and transport layers.
 	//   3. Stop and clear all timers.
 	//   4. Wait for all goroutines to finish via the WaitGroup.
-	r.cancelFunc()
+	if r.cancelFunc != nil {
+		r.cancelFunc()
+	}
 	if r.sessionLayer != nil {
 		r.sessionLayer.Cancel()
 	}
 	if r.networkLayer != nil {
 		r.networkLayer.Cancel()
 	}
-	// Stop and clear all timers to avoid callbacks after shutdown.
 	r.timerMutex.Lock()
 	for id, t := range r.ongoingTimers {
 		if t != nil {
@@ -187,10 +191,16 @@ func (r *Runtime) Cancel() {
 		}
 		delete(r.ongoingTimers, id)
 	}
+	for id, cancel := range r.ongoingPeriodicTimers {
+		if cancel != nil {
+			cancel()
+		}
+		delete(r.ongoingPeriodicTimers, id)
+	}
 	r.timerMutex.Unlock()
 
 	r.wg.Wait()
-	slog.Info("runtime stopped")
+	r.Logger().Info("runtime stopped")
 }
 
 func (r *Runtime) eventHandler(ctx context.Context) {
@@ -201,13 +211,26 @@ func (r *Runtime) eventHandler(ctx context.Context) {
 			return
 		case msg := <-r.msgChannel:
 			protocol := r.protocols[msg.ProtocolID()]
-			protocol.MessageChannel() <- msg
+			if protocol == nil {
+				continue
+			}
+			select {
+			case protocol.MessageChannel() <- msg:
+			case <-ctx.Done():
+				return
+			}
 		case timer := <-r.timerChannel:
 			protocol := r.protocols[timer.ProtocolID()]
-			protocol.TimerChannel() <- timer
-		// Application-level messages from the session layer
+			if protocol == nil {
+				continue
+			}
+			select {
+			case protocol.TimerChannel() <- timer:
+			case <-ctx.Done():
+				return
+			}
 		case sessionMsg := <-r.sessionLayer.OutMessages():
-			processMessage(sessionMsg.Msg, sessionMsg.Host())
+			r.processMessage(sessionMsg.Msg, sessionMsg.Host())
 		}
 	}
 }
@@ -243,7 +266,6 @@ func (r *Runtime) startSessionEvents(ctx context.Context) {
 				case *net.SessionConnected:
 					host := e.Host()
 					for _, proto := range r.protocols {
-						// Deliver the event into the protocol's own event loop
 						select {
 						case proto.sessionEvents <- sessionEvent{kind: sessionConnectedEvent, host: host}:
 						case <-ctx.Done():
@@ -269,10 +291,10 @@ type senderSetter interface {
 	SetSender(net.Host)
 }
 
-func processMessage(buffer bytes.Buffer, from net.Host) {
+func (r *Runtime) processMessage(buffer bytes.Buffer, from net.Host) {
+	logger := r.Logger()
 	var protocolID, messageID uint16
 	if err := binary.Read(&buffer, binary.LittleEndian, &protocolID); err != nil {
-		logger := GetRuntimeInstance().Logger()
 		logger.Error("failed to read protocolID from message header",
 			"from", from.ToString(),
 			"err", err,
@@ -280,7 +302,6 @@ func processMessage(buffer bytes.Buffer, from net.Host) {
 		return
 	}
 	if err := binary.Read(&buffer, binary.LittleEndian, &messageID); err != nil {
-		logger := GetRuntimeInstance().Logger()
 		logger.Error("failed to read messageID from message header",
 			"from", from.ToString(),
 			"protocolID", protocolID,
@@ -289,11 +310,8 @@ func processMessage(buffer bytes.Buffer, from net.Host) {
 		return
 	}
 
-	runtime := GetRuntimeInstance()
-	logger := runtime.Logger()
-	protocol, exists := runtime.protocols[int(protocolID)]
+	protocol, exists := r.protocols[int(protocolID)]
 	if !exists {
-		// Unknown protocol: log and discard the message, runtime keeps operating.
 		logger.Warn("received message for unknown protocol",
 			"from", from.ToString(),
 			"protocolID", protocolID,
@@ -304,7 +322,6 @@ func processMessage(buffer bytes.Buffer, from net.Host) {
 
 	serializer, ok := protocol.msgSerializers[int(messageID)]
 	if !ok {
-		// Unknown message ID for a known protocol: log and discard.
 		logger.Warn("received message for unknown messageID",
 			"from", from.ToString(),
 			"protocolID", protocolID,
@@ -313,7 +330,6 @@ func processMessage(buffer bytes.Buffer, from net.Host) {
 		return
 	}
 
-	// Remaining bytes belong to the message-specific payload.
 	message, err := serializer.Deserialize(buffer.Bytes())
 	if err != nil {
 		logger.Error("failed to deserialize message",
@@ -325,17 +341,21 @@ func processMessage(buffer bytes.Buffer, from net.Host) {
 		return
 	}
 
-	// If the concrete message type supports setting the sender,
-	// inform it of the remote host that sent this message.
 	if m, ok := message.(senderSetter); ok {
 		m.SetSender(from)
 	}
 
-	// push the message to that protocol's channel
 	logger.Debug("dispatching message",
 		"from", from.ToString(),
 		"protocolID", protocolID,
 		"messageID", messageID,
 	)
-	protocol.messageChannel <- message
+	ctx := r.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case protocol.messageChannel <- message:
+	case <-ctx.Done():
+	}
 }

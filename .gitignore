@@ -8,6 +8,9 @@
 *.so
 *.dylib
 
+# AI
+CLAUDE.md
+
 # IntellIj
 .idea
 

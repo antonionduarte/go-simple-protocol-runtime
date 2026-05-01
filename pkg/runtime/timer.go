@@ -5,20 +5,17 @@ import (
 	"time"
 )
 
-// Timer represents a logical timer scheduled through the runtime. This is
-// part of the public API exposed to protocol implementations.
-// TimerID must be stable and unique for the lifetime of the timer
-// within the runtime, as it is used as the key in Runtime.ongoingTimers.
-// Reusing the same TimerID for overlapping timers will cause later
-// registrations to overwrite earlier ones.
+// Timer represents a logical timer scheduled through the runtime. The
+// TimerID must be stable and unique within the protocol that scheduled it
+// — protocols don't share timer IDs, since timers are routed back to the
+// owning protocol via the ProtocolContext that scheduled them. Reusing
+// the same TimerID inside a single protocol replaces the earlier timer.
 type Timer interface {
 	TimerID() int
-	ProtocolID() int
 }
 
 // shutdownCtx returns the runtime's shutdown context, falling back to
-// context.Background() if Start has not yet been called. The fallback lets
-// callers register timers during construction or in tests.
+// context.Background() if Start has not yet been called.
 func (r *Runtime) shutdownCtx() context.Context {
 	r.timerMutex.Lock()
 	ctx := r.ctx
@@ -29,14 +26,16 @@ func (r *Runtime) shutdownCtx() context.Context {
 	return ctx
 }
 
-func (r *Runtime) setupTimer(timer Timer, duration time.Duration) {
+// setupTimer schedules a single-shot timer that fires after duration and
+// pushes the Timer onto the owning ProtoProtocol's timerChannel.
+func (r *Runtime) setupTimer(owner *ProtoProtocol, timer Timer, duration time.Duration) {
 	ctx := r.shutdownCtx()
 	goTimer := time.AfterFunc(duration, func() {
 		r.timerMutex.Lock()
 		delete(r.ongoingTimers, timer.TimerID())
 		r.timerMutex.Unlock()
 		select {
-		case r.timerChannel <- timer:
+		case owner.timerChannel <- timer:
 		case <-ctx.Done():
 		}
 	})
@@ -61,7 +60,9 @@ func (r *Runtime) cancelTimer(timerID int) {
 	r.timerMutex.Unlock()
 }
 
-func (r *Runtime) setupPeriodicTimer(timer Timer, duration time.Duration) {
+// setupPeriodicTimer schedules a recurring timer that fires every duration
+// and pushes the Timer onto the owning ProtoProtocol's timerChannel.
+func (r *Runtime) setupPeriodicTimer(owner *ProtoProtocol, timer Timer, duration time.Duration) {
 	parent := r.shutdownCtx()
 	ctx, cancel := context.WithCancel(parent)
 
@@ -84,7 +85,7 @@ func (r *Runtime) setupPeriodicTimer(timer Timer, duration time.Duration) {
 				return
 			case <-ticker.C:
 				select {
-				case r.timerChannel <- timer:
+				case owner.timerChannel <- timer:
 				case <-ctx.Done():
 					return
 				}

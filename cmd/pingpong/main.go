@@ -41,28 +41,20 @@ func main() {
 	peer := net.NewHost(*peerPort, *peerIP)
 
 	logger.Info("starting pingpong node",
-		"role", "node",
 		"self", (&myself).ToString(),
 		"peer", (&peer).ToString(),
 	)
 
-	rt := runtime.New(myself,
-		runtime.WithLogger(logger),
-		runtime.WithChannelBuffer(cfg.Runtime.ChannelBuffer),
-	)
+	rt := runtime.New(myself, runtime.WithLogger(logger))
 
 	ctx := context.Background()
 	tcp := net.NewTCPLayer(myself, ctx, cfg.Runtime.ChannelBuffer)
 	session := net.NewSessionLayer(tcp, myself, ctx, cfg.Runtime.ChannelBuffer, cfg.Runtime.ChannelBuffer)
 	rt.RegisterNetworkLayer(tcp)
 	rt.RegisterSessionLayer(session)
-	rt.RegisterProtocol(runtime.NewProtoProtocol(
-		protocol.NewPingPongProtocol(&myself, &peer), myself,
-	))
+	rt.Register(protocol.NewPingPongProtocol(peer))
 
-	if err := rt.Start(); err != nil {
+	if err := runtime.Run(rt); err != nil {
 		panic(err)
 	}
-
-	select {}
 }

@@ -8,15 +8,13 @@ import (
 )
 
 func TestRegisterProtocol(t *testing.T) {
-	testHost := net.NewHost(8080, "127.0.0.1")
-	rt := New(testHost)
+	rt := New(net.NewHost(8080, "127.0.0.1"))
 
-	mockProtocol := &MockProtocol{ProtoID: 123, MockSelf: testHost}
-	protoProtocol := NewProtoProtocol(mockProtocol, testHost)
+	protoProtocol := NewProtoProtocol(&MockProtocol{})
 	rt.RegisterProtocol(protoProtocol)
 
-	if _, exists := rt.protocols[mockProtocol.ProtocolID()]; !exists {
-		t.Errorf("Protocol was not registered correctly")
+	if len(rt.protocols) != 1 || rt.protocols[0] != protoProtocol {
+		t.Errorf("Protocol was not registered correctly: got %v", rt.protocols)
 	}
 }
 

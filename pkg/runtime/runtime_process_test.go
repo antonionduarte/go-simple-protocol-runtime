@@ -2,126 +2,82 @@ package runtime
 
 import (
 	"bytes"
+	"encoding/binary"
 	"testing"
 	"time"
 
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 )
 
-// TestProcessMessage_DispatchesToHandler verifies that a well-formed buffer
-// is deserialized and pushed into the correct protocol's messageChannel.
-func TestProcessMessage_DispatchesToHandler(t *testing.T) {
-	testHost := net.NewHost(9001, "127.0.0.1")
-	rt := New(testHost)
-
-	mockProtocol := &MockProtocol{ProtoID: 42, MockSelf: testHost}
-	proto := NewProtoProtocol(mockProtocol, testHost)
-	rt.RegisterProtocol(proto)
-
-	const messageID = 1
-	testMsg := &localMessage{id: messageID, pid: mockProtocol.ProtoID, sender: testHost}
-
-	ts := &testSerializer{msg: testMsg}
-	proto.RegisterMessageSerializer(messageID, ts)
-
+// processFrame builds the on-wire bytes for a single application-level
+// message: [WireID(uint64 LE)][payload]. Used by the processMessage tests.
+func processFrame(t *testing.T, wireID uint64, payload []byte) bytes.Buffer {
+	t.Helper()
 	var buf bytes.Buffer
-	_ = writeUint16(&buf, uint16(mockProtocol.ProtoID))
-	_ = writeUint16(&buf, uint16(messageID))
+	if err := binary.Write(&buf, binary.LittleEndian, wireID); err != nil {
+		t.Fatalf("write wireID: %v", err)
+	}
+	buf.Write(payload)
+	return buf
+}
 
-	from := net.NewHost(9999, "127.0.0.1")
-	rt.processMessage(buf, from)
+// TestProcessMessage_DispatchesToHandler verifies that a well-formed frame
+// is decoded and pushed into the owning protocol's messageChannel.
+func TestProcessMessage_DispatchesToHandler(t *testing.T) {
+	rt := New(net.NewHost(9001, "127.0.0.1"))
+
+	proto := NewProtoProtocol(&MockProtocol{})
+	rt.RegisterProtocol(proto)
+	proto.ensureContext()
+	RegisterCodec[*localMessage](proto.ctx, localCodec{})
+
+	frame := processFrame(t, WireID[*localMessage](), nil)
+	rt.processMessage(frame, net.NewHost(9999, "127.0.0.1"))
 
 	select {
 	case m := <-proto.MessageChannel():
-		if m.MessageID() != messageID || m.ProtocolID() != mockProtocol.ProtoID {
-			t.Fatalf("unexpected message dispatched: %+v", m)
+		if _, ok := m.(*localMessage); !ok {
+			t.Fatalf("expected *localMessage, got %T", m)
 		}
 	case <-time.After(time.Second):
 		t.Fatalf("expected a message to be dispatched to proto.messageChannel")
 	}
 }
 
-// TestProcessMessage_UnknownProtocolID ensures that an unknown protocol ID
-// does not panic and does not dispatch a message.
-func TestProcessMessage_UnknownProtocolID(t *testing.T) {
+// TestProcessMessage_UnknownWireID ensures that an unknown wire id is
+// dropped without panic and without dispatch.
+func TestProcessMessage_UnknownWireID(t *testing.T) {
 	rt := New(net.NewHost(0, "127.0.0.1"))
-
-	const unknownProtoID = 9999
-	const messageID = 1
-
-	var buf bytes.Buffer
-	_ = writeUint16(&buf, uint16(unknownProtoID))
-	_ = writeUint16(&buf, uint16(messageID))
-
-	from := net.NewHost(8888, "127.0.0.1")
-	rt.processMessage(buf, from)
+	frame := processFrame(t, 0xdeadbeef, nil)
+	rt.processMessage(frame, net.NewHost(8888, "127.0.0.1"))
 }
 
-// TestProcessMessage_UnknownMessageID ensures that a registered protocol but
-// unregistered message ID results in no dispatch.
-func TestProcessMessage_UnknownMessageID(t *testing.T) {
-	testHost := net.NewHost(9101, "127.0.0.1")
-	rt := New(testHost)
+// TestProcessMessage_DecodeError ensures that if the codec returns an error
+// the message is not dispatched.
+func TestProcessMessage_DecodeError(t *testing.T) {
+	rt := New(net.NewHost(9201, "127.0.0.1"))
 
-	mockProtocol := &MockProtocol{ProtoID: 43, MockSelf: testHost}
-	proto := NewProtoProtocol(mockProtocol, testHost)
+	proto := NewProtoProtocol(&MockProtocol{})
 	rt.RegisterProtocol(proto)
+	proto.ensureContext()
+	RegisterCodec[*failingMessageBM](proto.ctx, failingCodec{})
 
-	const unknownMessageID = 99
-
-	var buf bytes.Buffer
-	_ = writeUint16(&buf, uint16(mockProtocol.ProtoID))
-	_ = writeUint16(&buf, uint16(unknownMessageID))
-
-	from := net.NewHost(9999, "127.0.0.1")
-	rt.processMessage(buf, from)
+	frame := processFrame(t, WireID[*failingMessageBM](), nil)
+	rt.processMessage(frame, net.NewHost(9999, "127.0.0.1"))
 
 	select {
 	case m := <-proto.MessageChannel():
-		t.Fatalf("did not expect a message to be dispatched, got %+v", m)
+		t.Fatalf("did not expect a message to be dispatched when Decode fails, got %+v", m)
 	default:
 		// ok
 	}
 }
 
-// TestProcessMessage_DeserializeError ensures that if the serializer returns
-// an error, the message is not dispatched.
-func TestProcessMessage_DeserializeError(t *testing.T) {
-	testHost := net.NewHost(9201, "127.0.0.1")
-	rt := New(testHost)
-
-	mockProtocol := &MockProtocol{ProtoID: 44, MockSelf: testHost}
-	proto := NewProtoProtocol(mockProtocol, testHost)
-	rt.RegisterProtocol(proto)
-
-	const messageID = 1
-
-	ts := &testSerializer{msg: nil, err: assertError{}}
-	proto.RegisterMessageSerializer(messageID, ts)
-
-	var buf bytes.Buffer
-	_ = writeUint16(&buf, uint16(mockProtocol.ProtoID))
-	_ = writeUint16(&buf, uint16(messageID))
-
-	from := net.NewHost(9999, "127.0.0.1")
-	rt.processMessage(buf, from)
-
-	select {
-	case m := <-proto.MessageChannel():
-		t.Fatalf("did not expect a message to be dispatched when Deserialize fails, got %+v", m)
-	default:
-		// ok
-	}
-}
-
-// TestProcessMessage_TruncatedHeader ensures that a buffer that doesn't contain
-// enough bytes for ProtocolID/MessageID is handled gracefully.
+// TestProcessMessage_TruncatedHeader ensures that a buffer that doesn't
+// contain enough bytes for the uint64 wire id is handled gracefully.
 func TestProcessMessage_TruncatedHeader(t *testing.T) {
 	rt := New(net.NewHost(0, "127.0.0.1"))
-
 	var buf bytes.Buffer
 	buf.WriteByte(0x01)
-
-	from := net.NewHost(9999, "127.0.0.1")
-	rt.processMessage(buf, from)
+	rt.processMessage(buf, net.NewHost(9999, "127.0.0.1"))
 }

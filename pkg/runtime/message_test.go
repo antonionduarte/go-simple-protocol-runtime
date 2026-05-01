@@ -6,40 +6,38 @@ import (
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 )
 
-type failingSerializer struct{}
+// TestSendMessage_CodecError verifies that sendMessage propagates the
+// error from a registered codec's Encode call.
+func TestSendMessage_CodecError(t *testing.T) {
+	self := net.NewHost(0, "127.0.0.1")
+	rt := New(self)
 
-func (f *failingSerializer) Serialize(_ Message) ([]byte, error) {
-	return nil, assertError{}
-}
+	mock := &MockProtocol{}
+	proto := NewProtoProtocol(mock)
+	rt.RegisterProtocol(proto)
 
-func (f *failingSerializer) Deserialize(data []byte) (Message, error) {
-	return nil, assertError{}
-}
+	// Construct the protocolContext so we can route through the registration
+	// path that updates codecLookup. Calling Start() would do this, but
+	// avoiding it keeps the test isolated to sendMessage.
+	proto.ensureContext()
+	RegisterCodec[*failingMessageBM](proto.ctx, failingCodec{})
 
-type failingMessage struct {
-	id         int
-	pid        int
-	serializer Serializer
-	sender     net.Host
-}
-
-func (m *failingMessage) MessageID() int         { return m.id }
-func (m *failingMessage) ProtocolID() int        { return m.pid }
-func (m *failingMessage) Serializer() Serializer { return m.serializer }
-func (m *failingMessage) Sender() net.Host       { return m.sender }
-
-func TestSendMessage_SerializeError(t *testing.T) {
-	rt := New(net.NewHost(0, "127.0.0.1"))
-
-	msg := &failingMessage{
-		id:         1,
-		pid:        123,
-		serializer: &failingSerializer{},
-		sender:     net.NewHost(0, "127.0.0.1"),
+	msg := &failingMessageBM{}
+	if err := rt.sendMessage(msg, net.NewHost(8000, "127.0.0.1")); err == nil {
+		t.Fatalf("expected sendMessage to return error when Encode fails")
 	}
-	to := net.NewHost(8000, "127.0.0.1")
+}
 
-	if err := rt.sendMessage(msg, to); err == nil {
-		t.Fatalf("expected sendMessage to return error when Serialize fails")
+// TestSendMessage_NoCodecRegistered verifies that sendMessage returns a
+// clear error if no codec is registered for the message type, instead of
+// nil-dereferencing.
+func TestSendMessage_NoCodecRegistered(t *testing.T) {
+	self := net.NewHost(0, "127.0.0.1")
+	rt := New(self)
+	rt.RegisterProtocol(NewProtoProtocol(&MockProtocol{}))
+
+	msg := &localMessage{}
+	if err := rt.sendMessage(msg, net.NewHost(8000, "127.0.0.1")); err == nil {
+		t.Fatalf("expected sendMessage to error when no codec is registered")
 	}
 }

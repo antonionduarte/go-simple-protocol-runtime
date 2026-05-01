@@ -6,30 +6,18 @@ import (
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 )
 
+// MockProtocol is a stub Protocol used in tests. It does no work itself —
+// tests mostly care that Start/Init were called and that the protocol can
+// be wrapped, registered, and torn down through the runtime APIs.
 type MockProtocol struct {
 	StartCalled bool
 	InitCalled  bool
-	ProtoID     int
-	MockSelf    net.Host
 
 	HandledMessages []Message
 }
 
-func (m *MockProtocol) Start(ctx ProtocolContext) {
-	m.StartCalled = true
-}
-
-func (m *MockProtocol) Init(ctx ProtocolContext) {
-	m.InitCalled = true
-}
-
-func (m *MockProtocol) ProtocolID() int {
-	return m.ProtoID
-}
-
-func (m *MockProtocol) Self() net.Host {
-	return m.MockSelf
-}
+func (m *MockProtocol) Start(_ ProtocolContext) { m.StartCalled = true }
+func (m *MockProtocol) Init(_ ProtocolContext)  { m.InitCalled = true }
 
 func (m *MockProtocol) RecordMessageHandler(msg Message) {
 	m.HandledMessages = append(m.HandledMessages, msg)
@@ -52,114 +40,47 @@ func NewMockNetworkLayer() *MockNetworkLayer {
 	}
 }
 
-func (m *MockNetworkLayer) Connect(host net.Host) {
-	m.ConnectCalled = true
-}
+func (m *MockNetworkLayer) Connect(_ net.Host)                              { m.ConnectCalled = true }
+func (m *MockNetworkLayer) Disconnect(_ net.Host)                           { m.DisconnectCalled = true }
+func (m *MockNetworkLayer) Send(_ net.TransportMessage, _ net.Host)         { m.SendCalled = true }
+func (m *MockNetworkLayer) OutChannel() chan net.TransportMessage           { return m.outChannel }
+func (m *MockNetworkLayer) OutTransportEvents() chan net.TransportEvent     { return m.outTransportEvents }
+func (m *MockNetworkLayer) Cancel()                                         { m.CancelCalled = true }
 
-func (m *MockNetworkLayer) Disconnect(host net.Host) {
-	m.DisconnectCalled = true
-}
-
-func (m *MockNetworkLayer) Send(msg net.TransportMessage, sendTo net.Host) {
-	m.SendCalled = true
-}
-
-func (m *MockNetworkLayer) OutChannel() chan net.TransportMessage {
-	return m.outChannel
-}
-
-func (m *MockNetworkLayer) OutTransportEvents() chan net.TransportEvent {
-	return m.outTransportEvents
-}
-
-func (m *MockNetworkLayer) Cancel() {
-	m.CancelCalled = true
-}
-
+// localMessage is the canonical test message: just a sender, no payload.
+// It uses BaseMessage so Sender/SetSender are inherited.
 type localMessage struct {
-	id, pid int
-	sender  net.Host
+	BaseMessage
 }
-
-func (m *localMessage) MessageID() int         { return m.id }
-func (m *localMessage) ProtocolID() int        { return m.pid }
-func (m *localMessage) Serializer() Serializer { return &localSerializer{} }
-func (m *localMessage) Sender() net.Host       { return m.sender }
 
 var _ Message = (*localMessage)(nil)
 
-type localSerializer struct{}
+// localCodec is a no-payload Codec[*localMessage] used by tests that don't
+// care about message contents, only routing.
+type localCodec struct{}
 
-func (s *localSerializer) Serialize(_ Message) ([]byte, error) {
-	return nil, nil
-}
+func (localCodec) Encode(_ *localMessage) ([]byte, error)      { return nil, nil }
+func (localCodec) Decode(_ []byte) (*localMessage, error)      { return &localMessage{}, nil }
 
-func (s *localSerializer) Deserialize(data []byte) (Message, error) {
-	// localSerializer is used for messageID=1 in tests; preserve that id so
-	// the protocol's handler dispatch on the receiving side actually fires.
-	return &localMessage{id: 1}, nil
-}
+// failingCodec returns the supplied error from Encode and Decode. Used to
+// test that the runtime propagates codec errors instead of swallowing them.
+type failingCodec struct{}
 
-type testSerializer struct {
-	msg Message
-	err error
-}
+func (failingCodec) Encode(_ *failingMessageBM) ([]byte, error) { return nil, assertError{} }
+func (failingCodec) Decode(_ []byte) (*failingMessageBM, error) { return nil, assertError{} }
 
-func (s *testSerializer) Serialize(_ Message) ([]byte, error) {
-	return nil, nil
-}
+type failingMessageBM struct{ BaseMessage }
 
-func (s *testSerializer) Deserialize(data []byte) (Message, error) {
-	return s.msg, s.err
-}
-
+// assertError is a sentinel error used by failing test codecs.
 type assertError struct{}
 
-func (assertError) Error() string { return "expected deserialize error" }
+func (assertError) Error() string { return "expected codec error" }
 
-type IntegrationProtocol struct {
-	ProtoID  int
-	SelfHost net.Host
-	Peer     net.Host
-
-	ctx ProtocolContext
-}
-
-func (p *IntegrationProtocol) Start(ctx ProtocolContext) {
-	p.ctx = ctx
-}
-
-func (p *IntegrationProtocol) Init(ctx ProtocolContext) {
-	p.ctx = ctx
-	ctx.Connect(p.Peer)
-}
-
-func (p *IntegrationProtocol) ProtocolID() int { return p.ProtoID }
-func (p *IntegrationProtocol) Self() net.Host  { return p.SelfHost }
-
-func (p *IntegrationProtocol) OnSessionConnected(h net.Host) {
-	if !net.CompareHost(h, p.Peer) {
-		return
-	}
-	msg := &localMessage{
-		id:     1,
-		pid:    p.ProtoID,
-		sender: p.SelfHost,
-	}
-	if p.ctx != nil {
-		_ = p.ctx.Send(msg, p.Peer)
-	}
-}
-
-func (p *IntegrationProtocol) OnSessionDisconnected(h net.Host) {}
-
-// twoSidedProtocol is used by the two-runtime integration test. It connects
-// to its peer on Init, replies once on inbound, and records receipt for the
-// test to observe.
+// twoSidedProtocol is used by the two-runtime integration test. It
+// connects to its peer on Init, replies once on inbound, and records
+// receipt for the test to observe.
 type twoSidedProtocol struct {
-	ProtoID  int
-	SelfHost net.Host
-	Peer     net.Host
+	Peer net.Host
 
 	ctx      ProtocolContext
 	received atomic.Bool
@@ -167,8 +88,8 @@ type twoSidedProtocol struct {
 
 func (p *twoSidedProtocol) Start(ctx ProtocolContext) {
 	p.ctx = ctx
-	ctx.RegisterMessageSerializer(1, &localSerializer{})
-	ctx.RegisterMessageHandler(1, p.handle)
+	RegisterCodec[*localMessage](ctx, localCodec{})
+	RegisterHandler[*localMessage](ctx, p.handle)
 }
 
 func (p *twoSidedProtocol) Init(ctx ProtocolContext) {
@@ -176,18 +97,15 @@ func (p *twoSidedProtocol) Init(ctx ProtocolContext) {
 	ctx.Connect(p.Peer)
 }
 
-func (p *twoSidedProtocol) ProtocolID() int { return p.ProtoID }
-func (p *twoSidedProtocol) Self() net.Host  { return p.SelfHost }
-
 func (p *twoSidedProtocol) OnSessionConnected(h net.Host) {
 	if !net.CompareHost(h, p.Peer) || p.ctx == nil {
 		return
 	}
-	_ = p.ctx.Send(&localMessage{id: 1, pid: p.ProtoID, sender: p.SelfHost}, p.Peer)
+	_ = p.ctx.Send(&localMessage{}, p.Peer)
 }
 
-func (p *twoSidedProtocol) OnSessionDisconnected(net.Host) {}
+func (p *twoSidedProtocol) OnSessionDisconnected(_ net.Host) {}
 
-func (p *twoSidedProtocol) handle(msg Message) {
+func (p *twoSidedProtocol) handle(_ *localMessage) {
 	p.received.Store(true)
 }

@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	rtconfig "github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/config"
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 )
 
@@ -18,15 +17,21 @@ type Runtime struct {
 	self                  net.Host
 	ctx                   context.Context
 	cancelFunc            func()
-	msgChannel            chan Message
-	timerChannel          chan Timer
 	timerMutex            sync.Mutex
 	wg                    sync.WaitGroup
 	ongoingTimers         map[int]*time.Timer
 	ongoingPeriodicTimers map[int]context.CancelFunc
-	protocols             map[int]*ProtoProtocol
-	networkLayer          net.TransportLayer
-	sessionLayer          *net.SessionLayer
+
+	protocols     []*ProtoProtocol
+	codecLookup   map[uint64]*ProtoProtocol // wireID -> owning protocol; built up as codecs register
+	codecLookupMu sync.RWMutex
+
+	retryPolicy       RetryPolicy
+	retryMu           sync.Mutex
+	connectionRetries map[net.Host]*retryState
+
+	networkLayer net.TransportLayer
+	sessionLayer *net.SessionLayer
 
 	logger *slog.Logger
 }
@@ -49,11 +54,13 @@ type sessionEventType int
 const (
 	sessionConnectedEvent sessionEventType = iota
 	sessionDisconnectedEvent
+	sessionGivenUpEvent
 )
 
 type sessionEvent struct {
-	kind sessionEventType
-	host net.Host
+	kind     sessionEventType
+	host     net.Host
+	attempts int // populated for sessionGivenUpEvent
 }
 
 // Option configures a Runtime at construction.
@@ -71,28 +78,27 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
-// WithChannelBuffer sets the buffer size for the runtime's internal message
-// and timer channels. A non-positive value falls back to the package default.
-func WithChannelBuffer(n int) Option {
-	return func(r *Runtime) {
-		buf := rtconfig.RuntimeMsgTimerBufferOr(n)
-		r.msgChannel = make(chan Message, buf)
-		r.timerChannel = make(chan Timer, buf)
-	}
+// WithChannelBuffer is reserved for future use (per-protocol channel
+// buffer overrides). It is currently a no-op; per-protocol buffer sizes
+// are set via the protoProtocolChannelBuffer constant in protocol.go.
+func WithChannelBuffer(_ int) Option {
+	return func(_ *Runtime) {}
 }
 
 // New constructs a Runtime bound to the given local Host. Protocols, the
 // transport layer, and the session layer must be registered before calling
-// Start.
+// Start. The runtime context is created here, so Cancel works regardless
+// of whether Start has been called.
 func New(self net.Host, opts ...Option) *Runtime {
-	defaultBuf := rtconfig.RuntimeMsgTimerBufferOr(0)
+	ctx, cancel := context.WithCancel(context.Background())
 	r := &Runtime{
 		self:                  self,
-		msgChannel:            make(chan Message, defaultBuf),
-		timerChannel:          make(chan Timer, defaultBuf),
+		ctx:                   ctx,
+		cancelFunc:            cancel,
 		ongoingTimers:         make(map[int]*time.Timer),
 		ongoingPeriodicTimers: make(map[int]context.CancelFunc),
-		protocols:             make(map[int]*ProtoProtocol),
+		codecLookup:           make(map[uint64]*ProtoProtocol),
+		connectionRetries:     make(map[net.Host]*retryState),
 		logger:                slog.Default().With("component", "runtime"),
 	}
 	for _, opt := range opts {
@@ -110,10 +116,10 @@ func (r *Runtime) Logger() *slog.Logger {
 	return r.logger
 }
 
-// Start sets up a fresh background context for this Runtime instance and
-// launches all long-lived goroutines owned by the runtime (protocol event
-// loops, session event pump, and the main dispatcher). It returns an error
-// if either the network or session layer was not registered.
+// Start launches all long-lived goroutines owned by the runtime
+// (protocol event loops, session event pump, and the main dispatcher).
+// It returns an error if either the network or session layer was not
+// registered, or if Cancel has already been called on this runtime.
 func (r *Runtime) Start() error {
 	if r.networkLayer == nil {
 		return errors.New("runtime: network layer not registered")
@@ -121,20 +127,18 @@ func (r *Runtime) Start() error {
 	if r.sessionLayer == nil {
 		return errors.New("runtime: session layer not registered")
 	}
-
-	ctx := context.Background()
-	ctx, cancel := context.WithCancel(ctx)
-	r.ctx = ctx
-	r.cancelFunc = cancel
+	if err := r.ctx.Err(); err != nil {
+		return errors.New("runtime: cannot Start a runtime that has been cancelled")
+	}
 
 	r.Logger().Info("runtime starting")
 
-	r.startProtocols(ctx)
+	r.startProtocols(r.ctx)
 	r.initProtocols()
-	r.startSessionEvents(ctx)
+	r.startSessionEvents(r.ctx)
 
 	r.wg.Add(1)
-	go r.eventHandler(ctx)
+	go r.eventHandler(r.ctx)
 	return nil
 }
 
@@ -156,19 +160,31 @@ func (r *Runtime) RegisterSessionLayer(sessionLayer *net.SessionLayer) {
 	r.sessionLayer = sessionLayer
 }
 
-func (r *Runtime) RegisterProtocol(protocol *ProtoProtocol) {
-	protocol.bindRuntime(r)
-	r.protocols[protocol.ProtocolID()] = protocol
+// Register wraps the user's Protocol implementation in a ProtoProtocol
+// envelope and attaches it to this runtime. This is the recommended way
+// to add a protocol; the lower-level RegisterProtocol(*ProtoProtocol)
+// exists for tests.
+func (r *Runtime) Register(impl Protocol) {
+	r.RegisterProtocol(NewProtoProtocol(impl))
 }
 
-func (r *Runtime) GetProtocol(protocolID int) *ProtoProtocol {
-	return r.protocols[protocolID]
+// RegisterProtocol attaches a ProtoProtocol envelope to this runtime.
+// Most callers should use Register(impl) instead; this lower-level entry
+// point exists for tests that want to inspect the envelope.
+func (r *Runtime) RegisterProtocol(protocol *ProtoProtocol) {
+	protocol.bindRuntime(r)
+	r.protocols = append(r.protocols, protocol)
 }
 
 // connect / disconnect are the runtime-internal entry points used by
-// ProtocolContext implementations.
-func (r *Runtime) connect(host net.Host)    { r.sessionLayer.Connect(host) }
-func (r *Runtime) disconnect(host net.Host) { r.sessionLayer.Disconnect(host) }
+// ProtocolContext implementations. disconnect also clears any tracked
+// retry intent so a user-initiated disconnect halts further reconnect
+// attempts.
+func (r *Runtime) connect(host net.Host) { r.sessionLayer.Connect(host) }
+func (r *Runtime) disconnect(host net.Host) {
+	r.stopRetryFor(host)
+	r.sessionLayer.Disconnect(host)
+}
 
 func (r *Runtime) Cancel() {
 	// Cancel tears down the runtime in the following order:
@@ -176,9 +192,7 @@ func (r *Runtime) Cancel() {
 	//   2. Stop session and transport layers.
 	//   3. Stop and clear all timers.
 	//   4. Wait for all goroutines to finish via the WaitGroup.
-	if r.cancelFunc != nil {
-		r.cancelFunc()
-	}
+	r.cancelFunc()
 	if r.sessionLayer != nil {
 		r.sessionLayer.Cancel()
 	}
@@ -200,6 +214,8 @@ func (r *Runtime) Cancel() {
 	}
 	r.timerMutex.Unlock()
 
+	r.retryTeardown()
+
 	r.wg.Wait()
 	r.Logger().Info("runtime stopped")
 }
@@ -210,61 +226,22 @@ func (r *Runtime) eventHandler(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case msg := <-r.msgChannel:
-			if !r.routeMessage(ctx, msg) {
-				return
-			}
-		case timer := <-r.timerChannel:
-			if !r.routeTimer(ctx, timer) {
-				return
-			}
 		case sessionMsg := <-r.sessionLayer.OutMessages():
 			r.processMessage(sessionMsg.Msg, sessionMsg.Host())
 		}
 	}
 }
 
-// routeMessage forwards an incoming Message to the destination protocol's
-// channel. Returns false if the runtime context fired and the dispatcher
-// should exit.
-func (r *Runtime) routeMessage(ctx context.Context, msg Message) bool {
-	protocol := r.protocols[msg.ProtocolID()]
-	if protocol == nil {
-		return true
-	}
-	select {
-	case protocol.MessageChannel() <- msg:
-		return true
-	case <-ctx.Done():
-		return false
-	}
-}
-
-// routeTimer forwards a fired Timer to the destination protocol's channel.
-// Returns false if the runtime context fired and the dispatcher should exit.
-func (r *Runtime) routeTimer(ctx context.Context, timer Timer) bool {
-	protocol := r.protocols[timer.ProtocolID()]
-	if protocol == nil {
-		return true
-	}
-	select {
-	case protocol.TimerChannel() <- timer:
-		return true
-	case <-ctx.Done():
-		return false
-	}
-}
-
 func (r *Runtime) startProtocols(ctx context.Context) {
 	for _, protocol := range r.protocols {
-		r.Logger().Info("starting protocol", "protocolID", protocol.ProtocolID())
+		r.Logger().Info("starting protocol", "protocols", len(r.protocols))
 		protocol.Start(ctx, &r.wg)
 	}
 }
 
 func (r *Runtime) initProtocols() {
 	for _, protocol := range r.protocols {
-		r.Logger().Info("initializing protocol", "protocolID", protocol.ProtocolID())
+		r.Logger().Info("initializing protocol")
 		protocol.Init()
 	}
 }
@@ -291,26 +268,43 @@ func (r *Runtime) startSessionEvents(ctx context.Context) {
 }
 
 // dispatchSessionEvent translates a SessionLayer event into the runtime's
-// internal sessionEvent kind and fans it out to every registered protocol.
-// Returns false if the runtime context fired during fanout, signalling the
-// caller to exit its goroutine.
+// internal sessionEvent kind, updates retry bookkeeping if applicable, and
+// fans the event out to every registered protocol. Returns false if the
+// runtime context fired during fanout.
 func (r *Runtime) dispatchSessionEvent(ctx context.Context, ev net.SessionEvent) bool {
 	switch e := ev.(type) {
 	case *net.SessionConnected:
-		return r.fanoutSessionEvent(ctx, sessionConnectedEvent, e.Host())
+		r.onSessionUpForRetry(e.Host())
+		return r.fanoutSessionEvent(ctx, sessionEvent{kind: sessionConnectedEvent, host: e.Host()})
 	case *net.SessionDisconnected:
-		return r.fanoutSessionEvent(ctx, sessionDisconnectedEvent, e.Host())
+		giveUp, attempts := r.onSessionDownForRetry(e.Host())
+		if giveUp {
+			if !r.fanoutSessionEvent(ctx, sessionEvent{kind: sessionGivenUpEvent, host: e.Host(), attempts: attempts}) {
+				return false
+			}
+		}
+		return r.fanoutSessionEvent(ctx, sessionEvent{kind: sessionDisconnectedEvent, host: e.Host()})
+	case *net.SessionFailed:
+		giveUp, attempts := r.onSessionDownForRetry(e.Host())
+		if giveUp {
+			return r.fanoutSessionEvent(ctx, sessionEvent{kind: sessionGivenUpEvent, host: e.Host(), attempts: attempts})
+		}
+		// SessionFailed with retry-in-progress is suppressed from fanout —
+		// protocols only see the eventual SessionConnected (success) or
+		// SessionGivenUp (terminal failure). Without a retry policy in
+		// effect this branch is unreachable because no retry state existed.
+		return true
 	}
 	return true
 }
 
-// fanoutSessionEvent delivers (kind, host) into every protocol's sessionEvents
+// fanoutSessionEvent delivers ev into every protocol's sessionEvents
 // channel, ctx-guarded so a slow consumer or shutdown doesn't wedge the
 // caller. Returns false on ctx cancellation.
-func (r *Runtime) fanoutSessionEvent(ctx context.Context, kind sessionEventType, host net.Host) bool {
+func (r *Runtime) fanoutSessionEvent(ctx context.Context, ev sessionEvent) bool {
 	for _, proto := range r.protocols {
 		select {
-		case proto.sessionEvents <- sessionEvent{kind: kind, host: host}:
+		case proto.sessionEvents <- ev:
 		case <-ctx.Done():
 			return false
 		}
@@ -322,57 +316,46 @@ type senderSetter interface {
 	SetSender(net.Host)
 }
 
-// parseAppHeader pulls the [ProtocolID(uint16 LE) || MessageID(uint16 LE)]
-// prefix out of an application-layer payload. The remaining bytes in buffer
-// belong to the message-specific payload.
-func parseAppHeader(buffer *bytes.Buffer) (protocolID, messageID uint16, err error) {
-	if err = binary.Read(buffer, binary.LittleEndian, &protocolID); err != nil {
-		return 0, 0, fmt.Errorf("read protocolID: %w", err)
-	}
-	if err = binary.Read(buffer, binary.LittleEndian, &messageID); err != nil {
-		return protocolID, 0, fmt.Errorf("read messageID: %w", err)
-	}
-	return protocolID, messageID, nil
-}
-
+// processMessage decodes the wire id from the application-layer payload,
+// looks up the owning protocol via the runtime's codecLookup map, decodes
+// the message, and pushes it onto that protocol's messageChannel.
 func (r *Runtime) processMessage(buffer bytes.Buffer, from net.Host) {
 	logger := r.Logger()
-	protocolID, messageID, err := parseAppHeader(&buffer)
-	if err != nil {
-		logger.Error("failed to read message header",
+
+	var wireID uint64
+	if err := binary.Read(&buffer, binary.LittleEndian, &wireID); err != nil {
+		logger.Error("failed to read wireID header",
 			"from", from.ToString(),
-			"protocolID", protocolID,
 			"err", err,
 		)
 		return
 	}
 
-	protocol, exists := r.protocols[int(protocolID)]
+	r.codecLookupMu.RLock()
+	protocol, exists := r.codecLookup[wireID]
+	r.codecLookupMu.RUnlock()
 	if !exists {
-		logger.Warn("received message for unknown protocol",
+		logger.Warn("received message for unknown wireID",
 			"from", from.ToString(),
-			"protocolID", protocolID,
-			"messageID", messageID,
+			"wireID", fmt.Sprintf("%#x", wireID),
 		)
 		return
 	}
 
-	serializer, ok := protocol.msgSerializers[int(messageID)]
+	c, ok := protocol.codecs[wireID]
 	if !ok {
-		logger.Warn("received message for unknown messageID",
+		logger.Warn("codec lookup raced",
 			"from", from.ToString(),
-			"protocolID", protocolID,
-			"messageID", messageID,
+			"wireID", fmt.Sprintf("%#x", wireID),
 		)
 		return
 	}
 
-	message, err := serializer.Deserialize(buffer.Bytes())
+	message, err := c.decode(buffer.Bytes())
 	if err != nil {
-		logger.Error("failed to deserialize message",
+		logger.Error("failed to decode message",
 			"from", from.ToString(),
-			"protocolID", protocolID,
-			"messageID", messageID,
+			"wireID", fmt.Sprintf("%#x", wireID),
 			"err", err,
 		)
 		return
@@ -384,8 +367,7 @@ func (r *Runtime) processMessage(buffer bytes.Buffer, from net.Host) {
 
 	logger.Debug("dispatching message",
 		"from", from.ToString(),
-		"protocolID", protocolID,
-		"messageID", messageID,
+		"wireID", fmt.Sprintf("%#x", wireID),
 	)
 	ctx := r.ctx
 	if ctx == nil {

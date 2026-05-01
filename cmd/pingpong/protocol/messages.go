@@ -8,110 +8,58 @@ import (
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
 )
 
-const (
-	PingMessageID = 1
-	PongMessageID = 2
-)
-
 type (
 	PingMessage struct {
-		messageID  int
-		protocolID int
-		sender     net.Host
-		seq        uint64
-		serializer runtime.Serializer
+		runtime.BaseMessage
+		Seq uint64
 	}
 
 	PongMessage struct {
-		messageID  int
-		protocolID int
-		sender     net.Host
-		seq        uint64
-		serializer runtime.Serializer
+		runtime.BaseMessage
+		Seq uint64
 	}
 
-	PingSerializer struct{}
-	PongSerializer struct{}
+	// PingCodec / PongCodec are manual Codec[M] implementations: they
+	// encode and decode the Seq field as 8 little-endian bytes. They are
+	// kept manual (rather than using runtime.BinaryCodec[*M]) because the
+	// embedded BaseMessage carries a string-typed Host that
+	// encoding/binary can't size — typical of messages that want sender
+	// info logged. See codec_test.go for a BinaryCodec round-trip on a
+	// pure fixed-size message.
+	PingCodec struct{}
+	PongCodec struct{}
 )
 
 func NewPingMessage(sender net.Host, seq uint64) *PingMessage {
-	return &PingMessage{
-		messageID:  PingMessageID,
-		protocolID: PingPongProtocolID,
-		sender:     sender,
-		seq:        seq,
-		serializer: &PingSerializer{},
-	}
+	return &PingMessage{BaseMessage: runtime.BaseMessage{From: sender}, Seq: seq}
 }
 
 func NewPongMessage(sender net.Host, seq uint64) *PongMessage {
-	return &PongMessage{
-		messageID:  PongMessageID,
-		protocolID: PingPongProtocolID,
-		sender:     sender,
-		seq:        seq,
-		serializer: &PongSerializer{},
-	}
+	return &PongMessage{BaseMessage: runtime.BaseMessage{From: sender}, Seq: seq}
 }
 
-func (p *PingMessage) MessageID() int                 { return p.messageID }
-func (p *PingMessage) ProtocolID() int                { return p.protocolID }
-func (p *PingMessage) Sender() net.Host               { return p.sender }
-func (p *PingMessage) Seq() uint64                    { return p.seq }
-func (p *PingMessage) Serializer() runtime.Serializer { return p.serializer }
-func (p *PingMessage) SetSender(h net.Host)           { p.sender = h }
-
-func (p *PongMessage) MessageID() int                 { return p.messageID }
-func (p *PongMessage) ProtocolID() int                { return p.protocolID }
-func (p *PongMessage) Sender() net.Host               { return p.sender }
-func (p *PongMessage) Seq() uint64                    { return p.seq }
-func (p *PongMessage) Serializer() runtime.Serializer { return p.serializer }
-func (p *PongMessage) SetSender(h net.Host)           { p.sender = h }
-
-// PingSerializer encodes the ping sequence number as a fixed 8-byte
-// little-endian payload.
-func (p *PingSerializer) Serialize(msg runtime.Message) ([]byte, error) {
-	ping, ok := msg.(*PingMessage)
-	if !ok {
-		return nil, fmt.Errorf("PingSerializer.Serialize: expected *PingMessage, got %T", msg)
-	}
-	buf := make([]byte, 8)
-	binary.LittleEndian.PutUint64(buf, ping.seq)
-	return buf, nil
+func (PingCodec) Encode(p *PingMessage) ([]byte, error) {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, p.Seq)
+	return b, nil
 }
 
-func (p *PingSerializer) Deserialize(data []byte) (runtime.Message, error) {
-	if len(data) < 8 {
-		return nil, fmt.Errorf("PingSerializer.Deserialize: payload too short (%d bytes, need 8)", len(data))
+func (PingCodec) Decode(b []byte) (*PingMessage, error) {
+	if len(b) < 8 {
+		return nil, fmt.Errorf("PingCodec.Decode: payload too short (%d bytes, need 8)", len(b))
 	}
-	return &PingMessage{
-		messageID:  PingMessageID,
-		protocolID: PingPongProtocolID,
-		seq:        binary.LittleEndian.Uint64(data[:8]),
-		serializer: &PingSerializer{},
-	}, nil
+	return &PingMessage{Seq: binary.LittleEndian.Uint64(b[:8])}, nil
 }
 
-// PongSerializer encodes the pong sequence number as a fixed 8-byte
-// little-endian payload.
-func (p *PongSerializer) Serialize(msg runtime.Message) ([]byte, error) {
-	pong, ok := msg.(*PongMessage)
-	if !ok {
-		return nil, fmt.Errorf("PongSerializer.Serialize: expected *PongMessage, got %T", msg)
-	}
-	buf := make([]byte, 8)
-	binary.LittleEndian.PutUint64(buf, pong.seq)
-	return buf, nil
+func (PongCodec) Encode(p *PongMessage) ([]byte, error) {
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, p.Seq)
+	return b, nil
 }
 
-func (p *PongSerializer) Deserialize(data []byte) (runtime.Message, error) {
-	if len(data) < 8 {
-		return nil, fmt.Errorf("PongSerializer.Deserialize: payload too short (%d bytes, need 8)", len(data))
+func (PongCodec) Decode(b []byte) (*PongMessage, error) {
+	if len(b) < 8 {
+		return nil, fmt.Errorf("PongCodec.Decode: payload too short (%d bytes, need 8)", len(b))
 	}
-	return &PongMessage{
-		messageID:  PongMessageID,
-		protocolID: PingPongProtocolID,
-		seq:        binary.LittleEndian.Uint64(data[:8]),
-		serializer: &PongSerializer{},
-	}, nil
+	return &PongMessage{Seq: binary.LittleEndian.Uint64(b[:8])}, nil
 }

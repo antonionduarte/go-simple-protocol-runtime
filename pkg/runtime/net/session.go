@@ -336,38 +336,35 @@ func (s *sessionConn) handleTransportFailed() {
 	s.layer.emitEvent(&SessionFailed{host: logical})
 }
 
-// encodeHello builds a session-layer handshake payload that announces the
-// sender's logical Host. The payload format is:
+// encodeHello builds a session-layer handshake payload announcing the
+// sender's logical Host. Layout:
 //
-//	[HandshakeType(1 byte, HandshakeHello) || SerializeHost(self)]
+//	[HandshakeType(1 byte, HandshakeHello) || WriteHost(self)]
 //
-// Returns an error if the host cannot be serialized (e.g. IPv6).
+// Returns an error if the host cannot be serialized.
 func encodeHello(h Host) (bytes.Buffer, error) {
-	payload, err := SerializeHost(h)
-	if err != nil {
-		return bytes.Buffer{}, fmt.Errorf("encodeHello: %w", err)
-	}
 	buf := bytes.NewBuffer(nil)
 	buf.WriteByte(byte(HandshakeHello))
-	buf.Write(payload.Bytes())
+	if err := WriteHost(buf, h); err != nil {
+		return bytes.Buffer{}, fmt.Errorf("encodeHello: %w", err)
+	}
 	return *buf, nil
 }
 
-// encodeAck builds a session-layer handshake ACK payload with no extra data:
-//
-//	[HandshakeType(1 byte, HandshakeAck)]
+// encodeAck builds a session-layer handshake ACK payload with no extra
+// data: [HandshakeType(1 byte, HandshakeAck)].
 func encodeAck() bytes.Buffer {
 	buf := bytes.NewBuffer(nil)
 	buf.WriteByte(byte(HandshakeAck))
 	return *buf
 }
 
-// parseHandshakePayload interprets a session-layer handshake payload into a
-// HandshakeType and optional Host (for Hello messages). The expected layout is:
+// parseHandshakePayload interprets a session-layer handshake payload into
+// a HandshakeType and optional Host (for Hello messages). Layout:
 //
 //	[HandshakeType(1 byte) || Data...]
 //
-// where Data is SerializeHost(host) for HandshakeHello and empty for HandshakeAck.
+// where Data is wire.WriteHost(host) for HandshakeHello and empty for HandshakeAck.
 func parseHandshakePayload(buf *bytes.Buffer) (HandshakeType, Host, error) {
 	var zeroHost Host
 	if buf.Len() == 0 {
@@ -381,7 +378,7 @@ func parseHandshakePayload(buf *bytes.Buffer) (HandshakeType, Host, error) {
 
 	switch HandshakeType(msgType) {
 	case HandshakeHello:
-		host, err := DeserializeHost(*buf)
+		host, err := ReadHost(buf)
 		if err != nil {
 			return 0, zeroHost, fmt.Errorf("HandshakeHello: %w", err)
 		}

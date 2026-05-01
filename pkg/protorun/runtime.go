@@ -56,6 +56,17 @@ type Runtime struct {
 	retryMu           sync.Mutex
 	connectionRetries map[transport.Host]*retryState
 
+	// IPC routing tables. requestRoutes maps a request wireID to the
+	// protocol that handles it (one handler per type, runtime-wide).
+	// notificationFanout maps a notification wireID to the set of
+	// subscribed protocols and their captured handler closures.
+	requestRoutes        map[uint64]requestRoute
+	requestRoutesMu      sync.RWMutex
+	notificationFanout   map[uint64]map[*protoProtocol]func(Notification)
+	notificationFanoutMu sync.RWMutex
+
+	defaultRequestTimeout time.Duration
+
 	networkLayer transport.Layer
 	sessionLayer *transport.SessionLayer
 
@@ -130,6 +141,8 @@ func New(self transport.Host, opts ...Option) *Runtime {
 		ongoingPeriodicTimers: make(map[int]context.CancelFunc),
 		codecLookup:           make(map[uint64]*protoProtocol),
 		connectionRetries:     make(map[transport.Host]*retryState),
+		requestRoutes:         make(map[uint64]requestRoute),
+		notificationFanout:    make(map[uint64]map[*protoProtocol]func(Notification)),
 		logger:                slog.Default().With("component", "runtime"),
 	}
 	for _, opt := range opts {
@@ -230,6 +243,123 @@ func (r *Runtime) disconnect(host transport.Host) error {
 	}
 	r.sessionLayer.Disconnect(host)
 	return nil
+}
+
+// --- IPC routing ---
+//
+// These helpers are the runtime-side glue behind the public IPC API in
+// ipc.go. They follow the same pattern as session-event fanout: cross-
+// protocol channel writes are ctx-guarded so a slow consumer or a
+// shutdown in flight can't wedge the caller.
+
+// deliverReply pushes a reply (or terminal error) onto the requester's
+// replyEvents channel. Safe to call from any goroutine — responder
+// methods (Reply / Fail) and time.AfterFunc timeout callbacks both end
+// up here.
+func (r *Runtime) deliverReply(token replyToken, rep Reply, err error) {
+	select {
+	case token.requester.replyEvents <- inboundReply{requestID: token.requestID, rep: rep, err: err}:
+	case <-r.ctx.Done():
+	}
+}
+
+// sendRequest is the requester-side internal entry point. It allocates
+// a request ID, registers a pending entry, then either routes the
+// request to its handler (and arms a timeout) or delivers
+// ErrNoRequestHandler immediately. Pending is registered before any
+// delivery path so deliverReply can always find the entry — without
+// it, the no-handler error would be dropped on the floor.
+func (r *Runtime) sendRequest(
+	requester *protoProtocol,
+	wireID uint64,
+	req Request,
+	timeout time.Duration,
+	onReply func(Reply, error),
+) {
+	requestID := requester.nextRequestID.Add(1)
+	token := replyToken{requester: requester, requestID: requestID}
+
+	requester.pendingMu.Lock()
+	requester.pending[requestID] = pendingRequest{
+		cb:       onReply,
+		deadline: time.Now().Add(timeout),
+	}
+	requester.pendingMu.Unlock()
+
+	r.requestRoutesMu.RLock()
+	route, ok := r.requestRoutes[wireID]
+	r.requestRoutesMu.RUnlock()
+	if !ok {
+		r.deliverReply(token, nil, ErrNoRequestHandler)
+		return
+	}
+
+	time.AfterFunc(timeout, func() {
+		r.deliverReply(token, nil, ErrRequestTimeout)
+	})
+
+	select {
+	case route.proto.requestEvents <- inboundRequest{req: req, token: token, handler: route.handler}:
+	case <-r.ctx.Done():
+	}
+}
+
+// subscribeNotification adds proto to the fan-out set for wireID and
+// stores the handler closure under that protocol's key. A second call
+// from the same proto for the same wireID replaces the prior closure.
+func (r *Runtime) subscribeNotification(proto *protoProtocol, wireID uint64, fn func(Notification)) {
+	r.notificationFanoutMu.Lock()
+	defer r.notificationFanoutMu.Unlock()
+	subs, ok := r.notificationFanout[wireID]
+	if !ok {
+		subs = make(map[*protoProtocol]func(Notification))
+		r.notificationFanout[wireID] = subs
+	}
+	subs[proto] = fn
+}
+
+func (r *Runtime) unsubscribeNotification(proto *protoProtocol, wireID uint64) {
+	r.notificationFanoutMu.Lock()
+	defer r.notificationFanoutMu.Unlock()
+	subs, ok := r.notificationFanout[wireID]
+	if !ok {
+		return
+	}
+	delete(subs, proto)
+	if len(subs) == 0 {
+		delete(r.notificationFanout, wireID)
+	}
+}
+
+// publishNotification fans n out to every subscriber of wireID. Each
+// subscriber's notificationEvents channel write is ctx-guarded; if the
+// runtime is shutting down or a single subscriber's mailbox is full we
+// stop fanning out and return — the publisher should not block on
+// subscribers it doesn't know about.
+func (r *Runtime) publishNotification(wireID uint64, n Notification) {
+	r.notificationFanoutMu.RLock()
+	subs := r.notificationFanout[wireID]
+	// Snapshot the (proto, handler) pairs so we don't hold the lock
+	// while pushing onto channels (which can block on slow consumers).
+	pairs := make([]struct {
+		proto *protoProtocol
+		fn    func(Notification)
+	}, 0, len(subs))
+	for proto, fn := range subs {
+		pairs = append(pairs, struct {
+			proto *protoProtocol
+			fn    func(Notification)
+		}{proto, fn})
+	}
+	r.notificationFanoutMu.RUnlock()
+
+	for _, p := range pairs {
+		select {
+		case p.proto.notificationEvents <- inboundNotification{n: n, handler: p.fn}:
+		case <-r.ctx.Done():
+			return
+		}
+	}
 }
 
 func (r *Runtime) Cancel() {

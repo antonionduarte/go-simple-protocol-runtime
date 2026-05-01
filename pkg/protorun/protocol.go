@@ -2,12 +2,30 @@ package protorun
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/transport"
 )
+
+// PanicHandler can be implemented by a protocol that wants to observe
+// panics from its own handlers. The framework recovers from every
+// handler-level panic so a single bad handler doesn't take down the
+// runtime; this hook lets a protocol record the panic somewhere
+// (metrics, supervisor signal, error channel) without having to wrap
+// each handler in user-side recover().
+//
+// `where` is an informational tag identifying which handler kind
+// panicked (e.g. "message handler", "request handler"); it is intended
+// for diagnostics, not pattern-matching, and may change between
+// versions.
+type PanicHandler interface {
+	OnPanic(where string, recovered any)
+}
 
 // Package runtime exposes the core protocol runtime and the primary APIs
 // that protocol implementations interact with. Most user code should
@@ -43,6 +61,23 @@ type (
 		// implement ProtocolContext.
 		registerCodec(wireID uint64, c codec)
 		registerHandler(wireID uint64, fn func(Message, transport.Host))
+
+		// Internal hooks used by the IPC API in ipc.go. Same rationale —
+		// generic methods aren't allowed on interfaces, so the typed
+		// helpers route through these unexported methods.
+		registerRequestHandler(wireID uint64, fn func(Request, replyToken))
+		sendRequest(wireID uint64, req Request, timeout time.Duration, onReply func(Reply, error))
+		subscribeNotification(wireID uint64, fn func(Notification))
+		unsubscribeNotification(wireID uint64)
+		publishNotification(wireID uint64, n Notification)
+		deliverReplyToToken(token replyToken, rep Reply, err error)
+		runtimePtr() *Runtime
+
+		// reportPanic is the panic-handling hook used by the IPC
+		// request-handler wrapper, which has its own recover() to
+		// auto-fail the responder before the panic escapes into the
+		// event-loop dispatcher.
+		reportPanic(where string, rec any, stack []byte)
 	}
 
 	// Protocol describes a user protocol that can be hosted by the
@@ -60,9 +95,26 @@ type (
 		messageChannel chan messageEnvelope
 		sessionEvents  chan sessionEvent
 
+		// IPC channels: requests inbound to this protocol's handler,
+		// replies inbound to this protocol's outstanding SendRequest
+		// calls, and notifications inbound to this protocol's
+		// subscriptions.
+		requestEvents      chan inboundRequest
+		replyEvents        chan inboundReply
+		notificationEvents chan inboundNotification
+
 		codecs        map[uint64]codec
 		handlers      map[uint64]func(Message, transport.Host)
 		timerHandlers map[int]func(timer Timer)
+
+		// pending tracks outstanding SendRequest calls awaiting a reply
+		// or timeout. Indexed by per-protocol monotonic request ID.
+		// Guarded by pendingMu so SendRequest can be called from any
+		// goroutine, consistent with the rest of the ProtocolContext
+		// surface (Connect, Send, etc.).
+		pending       map[uint64]pendingRequest
+		pendingMu     sync.Mutex
+		nextRequestID atomic.Uint64
 
 		ctx ProtocolContext
 	}
@@ -93,13 +145,17 @@ func newProtoProtocol(protocol Protocol, buf int) *protoProtocol {
 		buf = defaultProtoChannelBuffer
 	}
 	return &protoProtocol{
-		protocol:       protocol,
-		timerChannel:   make(chan Timer, buf),
-		messageChannel: make(chan messageEnvelope, buf),
-		sessionEvents:  make(chan sessionEvent, buf),
-		codecs:         make(map[uint64]codec),
-		handlers:       make(map[uint64]func(Message, transport.Host)),
-		timerHandlers:  make(map[int]func(timer Timer)),
+		protocol:           protocol,
+		timerChannel:       make(chan Timer, buf),
+		messageChannel:     make(chan messageEnvelope, buf),
+		sessionEvents:      make(chan sessionEvent, buf),
+		requestEvents:      make(chan inboundRequest, buf),
+		replyEvents:        make(chan inboundReply, buf),
+		notificationEvents: make(chan inboundNotification, buf),
+		codecs:             make(map[uint64]codec),
+		handlers:           make(map[uint64]func(Message, transport.Host)),
+		timerHandlers:      make(map[int]func(timer Timer)),
+		pending:            make(map[uint64]pendingRequest),
 	}
 }
 
@@ -198,25 +254,164 @@ func (c *protocolContext) registerHandler(wireID uint64, fn func(Message, transp
 	c.proto.handlers[wireID] = fn
 }
 
+// runtimePtr is the unexported escape hatch from ProtocolContext to its
+// hosting Runtime. Used by IPC primitives that need to reach the
+// runtime-level routing tables without re-resolving via the codec
+// lookup path.
+func (c *protocolContext) runtimePtr() *Runtime { return c.runtime }
+
+// registerRequestHandler installs fn as the request handler for wireID
+// runtime-wide and points the runtime's request-routing table at this
+// protocol. A second registration for the same wireID logs a warning
+// and replaces the prior route — the framework allows it for
+// hot-reload scenarios but it is almost always a programming error in
+// production code.
+func (c *protocolContext) registerRequestHandler(wireID uint64, fn func(Request, replyToken)) {
+	c.runtime.requestRoutesMu.Lock()
+	if existing, ok := c.runtime.requestRoutes[wireID]; ok && existing.proto != c.proto {
+		c.logger.Warn("protorun: replacing existing request handler",
+			"wireID", wireID,
+		)
+	}
+	c.runtime.requestRoutes[wireID] = requestRoute{proto: c.proto, handler: fn}
+	c.runtime.requestRoutesMu.Unlock()
+}
+
+// sendRequest is the requester-side entry point. Routes through the
+// runtime so cross-protocol delivery and timeout management have a
+// single owner.
+func (c *protocolContext) sendRequest(wireID uint64, req Request, timeout time.Duration, onReply func(Reply, error)) {
+	c.runtime.sendRequest(c.proto, wireID, req, timeout, onReply)
+}
+
+// subscribeNotification adds this protocol to the runtime's fan-out
+// table for wireID and stashes the captured handler closure. The
+// closure is invoked from this protocol's event loop when a
+// notification arrives.
+func (c *protocolContext) subscribeNotification(wireID uint64, fn func(Notification)) {
+	c.runtime.subscribeNotification(c.proto, wireID, fn)
+}
+
+func (c *protocolContext) unsubscribeNotification(wireID uint64) {
+	c.runtime.unsubscribeNotification(c.proto, wireID)
+}
+
+func (c *protocolContext) publishNotification(wireID uint64, n Notification) {
+	c.runtime.publishNotification(wireID, n)
+}
+
+// deliverReplyToToken forwards a synthetic reply (typically an error
+// produced inside the type-assertion guard in RegisterRequestHandler's
+// closure) back to the requester. Reuses the same path as a normal
+// responder Reply / Fail.
+func (c *protocolContext) deliverReplyToToken(token replyToken, rep Reply, err error) {
+	c.runtime.deliverReply(token, rep, err)
+}
+
+func (c *protocolContext) reportPanic(where string, rec any, stack []byte) {
+	c.proto.reportPanic(where, rec, stack)
+}
+
 func (p *protoProtocol) eventHandler(ctx context.Context, wg *sync.WaitGroup) {
 	defer wg.Done()
-
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case env := <-p.messageChannel:
-			if h := p.handlers[wireIDOf(env.msg)]; h != nil {
-				h(env.msg, env.from)
-			}
+			p.handleMessage(env)
 		case timer := <-p.timerChannel:
-			if h := p.timerHandlers[timer.TimerID()]; h != nil {
-				h(timer)
-			}
+			p.handleTimer(timer)
 		case ev := <-p.sessionEvents:
-			p.deliverSessionEvent(ev)
+			p.safeCall("session event handler", func() { p.deliverSessionEvent(ev) })
+		case req := <-p.requestEvents:
+			// The IPC closure created in RegisterRequestHandler has its
+			// own recover() that auto-fails the responder; safeCall
+			// here is belt-and-suspenders for the (impossible by
+			// construction) case where the closure itself panics
+			// before installing its defer.
+			p.safeCall("request handler", func() { req.handler(req.req, req.token) })
+		case rep := <-p.replyEvents:
+			p.safeCall("reply handler", func() { p.deliverReply(rep) })
+		case n := <-p.notificationEvents:
+			p.safeCall("notification handler", func() { n.handler(n.n) })
 		}
 	}
+}
+
+func (p *protoProtocol) handleMessage(env messageEnvelope) {
+	h := p.handlers[wireIDOf(env.msg)]
+	if h == nil {
+		return
+	}
+	p.safeCall("message handler", func() { h(env.msg, env.from) })
+}
+
+func (p *protoProtocol) handleTimer(timer Timer) {
+	h := p.timerHandlers[timer.TimerID()]
+	if h == nil {
+		return
+	}
+	p.safeCall("timer handler", func() { h(timer) })
+}
+
+// safeCall wraps a handler invocation in defer/recover so that a panic
+// in user code is logged (with stack), surfaced to the protocol's
+// optional PanicHandler, and the event loop continues. Without this
+// guard a single bad handler would take down the protocol's event
+// loop and break every other handler that protocol owns.
+func (p *protoProtocol) safeCall(where string, fn func()) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			p.reportPanic(where, rec, debug.Stack())
+		}
+	}()
+	fn()
+}
+
+// reportPanic logs the panic with structured fields and notifies an
+// optional PanicHandler implementation on the protocol. Used by both
+// safeCall (for general handler dispatch) and the IPC request-handler
+// closure (which recovers earlier so it can auto-fail the responder
+// before reporting).
+func (p *protoProtocol) reportPanic(where string, rec any, stack []byte) {
+	logger := slog.Default()
+	if p.runtime != nil {
+		logger = p.runtime.Logger()
+	}
+	logger.Error("protocol handler panicked",
+		"protocol", fmt.Sprintf("%T", p.protocol),
+		"where", where,
+		"recovered", fmt.Sprintf("%v", rec),
+		"stack", string(stack),
+	)
+	if h, ok := p.protocol.(PanicHandler); ok {
+		// Defensive recover around the user's PanicHandler — if it
+		// also panics we don't want an infinite loop, just drop it.
+		func() {
+			defer func() { _ = recover() }()
+			h.OnPanic(where, rec)
+		}()
+	}
+}
+
+// deliverReply matches an inbound reply (or timeout) to its pending
+// SendRequest entry and invokes the callback on the requester's event
+// loop. If no pending entry is found the reply is dropped — the most
+// common cause is a real reply landing after the timeout already
+// fired (or vice versa); first-arrival wins, second-arrival is a
+// silent no-op.
+func (p *protoProtocol) deliverReply(rep inboundReply) {
+	p.pendingMu.Lock()
+	pending, ok := p.pending[rep.requestID]
+	if ok {
+		delete(p.pending, rep.requestID)
+	}
+	p.pendingMu.Unlock()
+	if !ok {
+		return
+	}
+	pending.cb(rep.rep, rep.err)
 }
 
 // deliverSessionEvent invokes the protocol's optional session-event

@@ -16,11 +16,13 @@ type WireNamer interface {
 	WireName() string
 }
 
-// WireID returns the deterministic 64-bit wire identifier for message
-// type M. Use this when you need the id without a Message instance —
-// e.g. inside a generic registration helper. The id is the FNV-1a 64-bit
-// hash of either M.WireName() (if M implements WireNamer) or
-// reflect.TypeOf(*new(M)).String() (the Go type name, fully qualified).
+// WireID returns the deterministic 64-bit wire identifier for type T.
+// Use this when you need the id without an instance — e.g. inside a
+// generic registration helper. The id is the FNV-1a 64-bit hash of
+// either T.WireName() (if T implements WireNamer) or
+// reflect.TypeOf(*new(T)).String() (the Go type name, fully qualified).
+//
+// Used internally for Message, Request, Reply, and Notification types.
 //
 // IMPORTANT: the default — hashing the Go type name — silently changes
 // when the type is renamed, moved between packages, or when the import
@@ -28,15 +30,15 @@ type WireNamer interface {
 // deployed peers without any compile-time signal. Production protocols
 // should implement WireName() on every message type to freeze the wire
 // identifier independently of Go type names.
-func WireID[M Message]() uint64 {
-	var zero M
+func WireID[T any]() uint64 {
+	var zero T
 	t := reflect.TypeOf(zero)
 	if t == nil {
-		// M is an interface or otherwise non-instantiable; reject explicitly.
+		// T is an interface or otherwise non-instantiable; reject explicitly.
 		panic("protorun: WireID called with non-instantiable type parameter")
 	}
 	// Allocate a non-nil instance to call any optional WireName() method.
-	// For pointer types, `var zero M` is typed nil and would panic on a
+	// For pointer types, `var zero T` is typed nil and would panic on a
 	// method call — reflect.New(t.Elem()) produces a fresh *T.
 	var probe any
 	if t.Kind() == reflect.Pointer {

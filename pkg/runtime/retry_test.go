@@ -6,30 +6,30 @@ import (
 	"testing"
 	"time"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/transport"
 )
 
 // retryWatcher captures session lifecycle events for an integration test.
 type retryWatcher struct {
 	mu        sync.Mutex
-	connected []net.Host
+	connected []transport.Host
 	givenUp   []retryGiveUp
 }
 
 type retryGiveUp struct {
-	host     net.Host
+	host     transport.Host
 	attempts int
 }
 
 func (w *retryWatcher) Start(_ ProtocolContext)      {}
 func (w *retryWatcher) Init(ctx ProtocolContext)     {}
-func (w *retryWatcher) OnSessionConnected(h net.Host) {
+func (w *retryWatcher) OnSessionConnected(h transport.Host) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.connected = append(w.connected, h)
 }
-func (w *retryWatcher) OnSessionDisconnected(_ net.Host) {}
-func (w *retryWatcher) OnSessionGivenUp(h net.Host, attempts int) {
+func (w *retryWatcher) OnSessionDisconnected(_ transport.Host) {}
+func (w *retryWatcher) OnSessionGivenUp(h transport.Host, attempts int) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.givenUp = append(w.givenUp, retryGiveUp{host: h, attempts: attempts})
@@ -38,7 +38,7 @@ func (w *retryWatcher) OnSessionGivenUp(h net.Host, attempts int) {
 // retryClient is a tiny protocol that calls ConnectWithRetry on its target
 // during Init. Tests then observe the runtime via the retryWatcher.
 type retryClient struct {
-	target net.Host
+	target transport.Host
 }
 
 func (p *retryClient) Start(_ ProtocolContext) {}
@@ -49,15 +49,15 @@ func (p *retryClient) Init(ctx ProtocolContext) {
 // buildRetryRuntime stands up a real runtime (with TCP+session) and
 // registers the retryClient for `target`, plus a retryWatcher to observe
 // events.
-func buildRetryRuntime(t *testing.T, self, target net.Host, policy RetryPolicy) (*Runtime, *retryWatcher) {
+func buildRetryRuntime(t *testing.T, self, target transport.Host, policy RetryPolicy) (*Runtime, *retryWatcher) {
 	t.Helper()
 	w := &retryWatcher{}
 	rt := New(self, WithRetryPolicy(policy))
 	ctx := context.Background()
-	tcp := net.NewTCPLayer(self, ctx, 0)
-	session := net.NewSessionLayer(tcp, self, ctx, 0, 0)
-	rt.RegisterNetworkLayer(tcp)
-	rt.RegisterSessionLayer(session)
+	tcp := transport.NewTCPLayer(self, ctx, 0)
+	session := transport.NewSessionLayer(tcp, self, ctx, 0, 0)
+	rt.registerNetworkLayer(tcp)
+	rt.registerSessionLayer(session)
 	rt.Register(&retryClient{target: target})
 	rt.Register(w)
 	return rt, w
@@ -69,12 +69,12 @@ func buildRetryRuntime(t *testing.T, self, target net.Host, policy RetryPolicy) 
 // least one attempt during the window when the peer is up, and the
 // watcher should observe a SessionConnected.
 func TestRuntime_ConnectRetry_LatePeer(t *testing.T) {
-	clientHost := net.NewHost(7610, "127.0.0.1")
-	peerHost := net.NewHost(7611, "127.0.0.1")
+	clientHost := transport.NewHost(7610, "127.0.0.1")
+	peerHost := transport.NewHost(7611, "127.0.0.1")
 
 	policy := RetryPolicy{Initial: 50 * time.Millisecond, Max: 200 * time.Millisecond, Multiplier: 2}
 	rtA, watcher := buildRetryRuntime(t, clientHost, peerHost, policy)
-	if err := rtA.Start(); err != nil {
+	if err := rtA.start(); err != nil {
 		t.Fatalf("rtA.Start: %v", err)
 	}
 	defer rtA.Cancel()
@@ -85,12 +85,12 @@ func TestRuntime_ConnectRetry_LatePeer(t *testing.T) {
 
 	rtB := New(peerHost)
 	ctx := context.Background()
-	tcpB := net.NewTCPLayer(peerHost, ctx, 0)
-	sessB := net.NewSessionLayer(tcpB, peerHost, ctx, 0, 0)
-	rtB.RegisterNetworkLayer(tcpB)
-	rtB.RegisterSessionLayer(sessB)
+	tcpB := transport.NewTCPLayer(peerHost, ctx, 0)
+	sessB := transport.NewSessionLayer(tcpB, peerHost, ctx, 0, 0)
+	rtB.registerNetworkLayer(tcpB)
+	rtB.registerSessionLayer(sessB)
 	rtB.Register(&MockProtocol{})
-	if err := rtB.Start(); err != nil {
+	if err := rtB.start(); err != nil {
 		t.Fatalf("rtB.Start: %v", err)
 	}
 	defer rtB.Cancel()
@@ -111,8 +111,8 @@ func TestRuntime_ConnectRetry_LatePeer(t *testing.T) {
 // TestRuntime_ConnectRetry_MaxAttempts retries against a peer that never
 // comes online and expects exactly N SessionGivenUp events after MaxAttempts.
 func TestRuntime_ConnectRetry_MaxAttempts(t *testing.T) {
-	clientHost := net.NewHost(7620, "127.0.0.1")
-	deadHost := net.NewHost(7621, "127.0.0.1")
+	clientHost := transport.NewHost(7620, "127.0.0.1")
+	deadHost := transport.NewHost(7621, "127.0.0.1")
 
 	policy := RetryPolicy{
 		Initial:     20 * time.Millisecond,
@@ -121,7 +121,7 @@ func TestRuntime_ConnectRetry_MaxAttempts(t *testing.T) {
 		MaxAttempts: 3,
 	}
 	rt, watcher := buildRetryRuntime(t, clientHost, deadHost, policy)
-	if err := rt.Start(); err != nil {
+	if err := rt.start(); err != nil {
 		t.Fatalf("rt.Start: %v", err)
 	}
 	defer rt.Cancel()
@@ -152,8 +152,8 @@ func TestRuntime_ConnectRetry_MaxAttempts(t *testing.T) {
 // despite a finite MaxAttempts) and that the runtime's retry bookkeeping
 // is cleared.
 func TestRuntime_ConnectRetry_DisconnectCancels(t *testing.T) {
-	clientHost := net.NewHost(7630, "127.0.0.1")
-	deadHost := net.NewHost(7631, "127.0.0.1")
+	clientHost := transport.NewHost(7630, "127.0.0.1")
+	deadHost := transport.NewHost(7631, "127.0.0.1")
 
 	policy := RetryPolicy{
 		Initial:     30 * time.Millisecond,
@@ -163,7 +163,7 @@ func TestRuntime_ConnectRetry_DisconnectCancels(t *testing.T) {
 	}
 
 	rt, watcher := buildRetryRuntime(t, clientHost, deadHost, policy)
-	if err := rt.Start(); err != nil {
+	if err := rt.start(); err != nil {
 		t.Fatalf("rt.Start: %v", err)
 	}
 	defer rt.Cancel()

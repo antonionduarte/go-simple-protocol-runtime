@@ -3,13 +3,13 @@ package runtime
 import (
 	"testing"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/transport"
 )
 
 // TestSendMessage_CodecError verifies that sendMessage propagates the
 // error from a registered codec's Encode call.
 func TestSendMessage_CodecError(t *testing.T) {
-	self := net.NewHost(0, "127.0.0.1")
+	self := transport.NewHost(0, "127.0.0.1")
 	rt := New(self)
 
 	mock := &MockProtocol{}
@@ -23,7 +23,7 @@ func TestSendMessage_CodecError(t *testing.T) {
 	RegisterCodec[*failingMessageBM](proto.ctx, failingCodec{})
 
 	msg := &failingMessageBM{}
-	if err := rt.sendMessage(msg, net.NewHost(8000, "127.0.0.1")); err == nil {
+	if err := rt.sendMessage(msg, transport.NewHost(8000, "127.0.0.1")); err == nil {
 		t.Fatalf("expected sendMessage to return error when Encode fails")
 	}
 }
@@ -32,12 +32,12 @@ func TestSendMessage_CodecError(t *testing.T) {
 // clear error if no codec is registered for the message type, instead of
 // nil-dereferencing.
 func TestSendMessage_NoCodecRegistered(t *testing.T) {
-	self := net.NewHost(0, "127.0.0.1")
+	self := transport.NewHost(0, "127.0.0.1")
 	rt := New(self)
 	rt.RegisterProtocol(NewProtoProtocol(&MockProtocol{}))
 
 	msg := &localMessage{}
-	if err := rt.sendMessage(msg, net.NewHost(8000, "127.0.0.1")); err == nil {
+	if err := rt.sendMessage(msg, transport.NewHost(8000, "127.0.0.1")); err == nil {
 		t.Fatalf("expected sendMessage to error when no codec is registered")
 	}
 }

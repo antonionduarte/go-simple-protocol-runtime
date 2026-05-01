@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/transport"
 )
 
 // Package runtime exposes the core protocol runtime and the primary APIs
@@ -25,10 +25,10 @@ type (
 	// reach the framework through the unexported methods on this
 	// interface.
 	ProtocolContext interface {
-		Connect(host net.Host)
-		ConnectWithRetry(host net.Host)
-		Disconnect(host net.Host)
-		Send(msg Message, to net.Host) error
+		Connect(host transport.Host) error
+		ConnectWithRetry(host transport.Host) error
+		Disconnect(host transport.Host) error
+		Send(msg Message, to transport.Host) error
 
 		SetupTimer(timer Timer, duration time.Duration)
 		SetupPeriodicTimer(timer Timer, duration time.Duration)
@@ -36,13 +36,13 @@ type (
 		RegisterTimerHandler(timer Timer, handler func(Timer))
 
 		Logger() *slog.Logger
-		Self() net.Host
+		Self() transport.Host
 
 		// Internal hooks used by RegisterCodec[M] and RegisterHandler[M].
 		// Defined as unexported methods so only the runtime package can
 		// implement ProtocolContext.
 		registerCodec(wireID uint64, c codec)
-		registerHandler(wireID uint64, fn func(Message))
+		registerHandler(wireID uint64, fn func(Message, transport.Host))
 	}
 
 	// Protocol describes a user protocol that can be hosted by the
@@ -57,14 +57,23 @@ type (
 		protocol       Protocol
 		runtime        *Runtime
 		timerChannel   chan Timer
-		messageChannel chan Message
+		messageChannel chan messageEnvelope
 		sessionEvents  chan sessionEvent
 
 		codecs        map[uint64]codec
-		handlers      map[uint64]func(Message)
+		handlers      map[uint64]func(Message, transport.Host)
 		timerHandlers map[int]func(timer Timer)
 
 		ctx ProtocolContext
+	}
+
+	// messageEnvelope carries a decoded inbound Message together with the
+	// transport-level host it arrived from. The from value is supplied to
+	// the handler as the second arg, so handlers see (msg, from) without
+	// having to encode sender info on the wire.
+	messageEnvelope struct {
+		msg  Message
+		from transport.Host
 	}
 
 	protocolContext struct {
@@ -82,10 +91,10 @@ func NewProtoProtocol(protocol Protocol) *ProtoProtocol {
 	return &ProtoProtocol{
 		protocol:       protocol,
 		timerChannel:   make(chan Timer, protoProtocolChannelBuffer),
-		messageChannel: make(chan Message, protoProtocolChannelBuffer),
+		messageChannel: make(chan messageEnvelope, protoProtocolChannelBuffer),
 		sessionEvents:  make(chan sessionEvent, protoProtocolChannelBuffer),
 		codecs:         make(map[uint64]codec),
-		handlers:       make(map[uint64]func(Message)),
+		handlers:       make(map[uint64]func(Message, transport.Host)),
 		timerHandlers:  make(map[int]func(timer Timer)),
 	}
 }
@@ -114,7 +123,9 @@ func (p *ProtoProtocol) RegisterTimerHandler(timer Timer, handler func(Timer)) {
 
 func (p *ProtoProtocol) TimerChannel() chan Timer { return p.timerChannel }
 
-func (p *ProtoProtocol) MessageChannel() chan Message { return p.messageChannel }
+// messageChannelEnvelope returns the per-protocol envelope channel.
+// Exposed via this internal accessor for the runtime dispatcher.
+func (p *ProtoProtocol) messageChannelEnvelope() chan messageEnvelope { return p.messageChannel }
 
 // ensureContext lazily initializes the ProtocolContext. The protocol must
 // have been registered with a Runtime via RegisterProtocol or Register
@@ -139,11 +150,17 @@ func (p *ProtoProtocol) ensureContext() {
 
 // --- ProtocolContext implementation ---
 
-func (c *protocolContext) Connect(host net.Host)          { c.runtime.connect(host) }
-func (c *protocolContext) ConnectWithRetry(host net.Host) { c.runtime.connectWithRetry(host) }
-func (c *protocolContext) Disconnect(host net.Host)       { c.runtime.disconnect(host) }
+func (c *protocolContext) Connect(host transport.Host) error {
+	return c.runtime.connect(host)
+}
+func (c *protocolContext) ConnectWithRetry(host transport.Host) error {
+	return c.runtime.connectWithRetry(host)
+}
+func (c *protocolContext) Disconnect(host transport.Host) error {
+	return c.runtime.disconnect(host)
+}
 
-func (c *protocolContext) Send(msg Message, to net.Host) error {
+func (c *protocolContext) Send(msg Message, to transport.Host) error {
 	return c.runtime.sendMessage(msg, to)
 }
 
@@ -159,7 +176,7 @@ func (c *protocolContext) RegisterTimerHandler(timer Timer, handler func(Timer))
 	c.proto.timerHandlers[timer.TimerID()] = handler
 }
 
-func (c *protocolContext) Self() net.Host       { return c.runtime.self }
+func (c *protocolContext) Self() transport.Host       { return c.runtime.self }
 func (c *protocolContext) Logger() *slog.Logger { return c.logger }
 
 func (c *protocolContext) registerCodec(wireID uint64, codec codec) {
@@ -173,7 +190,7 @@ func (c *protocolContext) registerCodec(wireID uint64, codec codec) {
 	c.runtime.codecLookupMu.Unlock()
 }
 
-func (c *protocolContext) registerHandler(wireID uint64, fn func(Message)) {
+func (c *protocolContext) registerHandler(wireID uint64, fn func(Message, transport.Host)) {
 	c.proto.handlers[wireID] = fn
 }
 
@@ -184,9 +201,9 @@ func (p *ProtoProtocol) eventHandler(ctx context.Context, wg *sync.WaitGroup) {
 		select {
 		case <-ctx.Done():
 			return
-		case msg := <-p.messageChannel:
-			if h := p.handlers[wireIDOf(msg)]; h != nil {
-				h(msg)
+		case env := <-p.messageChannel:
+			if h := p.handlers[wireIDOf(env.msg)]; h != nil {
+				h(env.msg, env.from)
 			}
 		case timer := <-p.timerChannel:
 			if h := p.timerHandlers[timer.TimerID()]; h != nil {

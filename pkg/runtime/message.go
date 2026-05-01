@@ -5,36 +5,39 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/transport"
 )
 
-// Message is the minimal interface that every protocol message must satisfy.
-// The wire identifier is derived from the concrete type (see wireid.go);
-// no manual ID is required.
+// Message is a marker interface satisfied by any type that embeds
+// BaseMessage (or implements isMessage() directly). The wire identifier
+// is derived from the concrete type by the framework; no manual ID is
+// required, and message values carry no framework-required fields.
+//
+// Sender information is delivered to handlers as a separate parameter
+// (handlers have signature func(M, transport.Host)) — messages don't
+// have to encode it on the wire, which keeps simple fixed-size message
+// types compatible with BinaryCodec[M].
 type Message interface {
-	Sender() net.Host
+	isMessage()
 }
 
-// BaseMessage is an optional embeddable struct that satisfies the Sender()
-// requirement and exposes a SetSender method used by the runtime to inject
-// the sender host on the receive side. Embed it to avoid writing the
-// boilerplate yourself:
+// BaseMessage is a zero-byte embeddable type. Embedding it makes any
+// struct satisfy the Message interface without imposing layout
+// constraints — encoding/binary can size structs that embed BaseMessage,
+// so BinaryCodec[M] works on them.
 //
 //	type Ping struct {
 //	    runtime.BaseMessage
 //	    Seq uint64
 //	}
-type BaseMessage struct {
-	From net.Host
-}
+type BaseMessage struct{}
 
-func (b BaseMessage) Sender() net.Host        { return b.From }
-func (b *BaseMessage) SetSender(h net.Host)   { b.From = h }
+func (BaseMessage) isMessage() {}
 
 // sendMessage encodes the message using its registered codec, prepends the
 // 8-byte little-endian wire identifier, and hands the buffer to the session
 // layer. Returns an error if no codec is registered for the message type.
-func (r *Runtime) sendMessage(msg Message, sendTo net.Host) error {
+func (r *Runtime) sendMessage(msg Message, sendTo transport.Host) error {
 	logger := r.Logger()
 
 	wireID := wireIDOf(msg)

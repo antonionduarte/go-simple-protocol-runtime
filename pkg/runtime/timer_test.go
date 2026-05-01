@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/transport"
 )
 
 type testTimer struct {
@@ -16,7 +16,7 @@ func (t *testTimer) TimerID() int { return t.id }
 // TestCancelTimerStopsTimer schedules a timer and cancels it before it
 // fires; nothing should arrive on the owning protocol's timerChannel.
 func TestCancelTimerStopsTimer(t *testing.T) {
-	rt := New(net.NewHost(7400, "127.0.0.1"))
+	rt := New(transport.NewHost(7400, "127.0.0.1"))
 	owner := NewProtoProtocol(&MockProtocol{})
 	rt.RegisterProtocol(owner)
 

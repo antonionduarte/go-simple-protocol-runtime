@@ -3,7 +3,7 @@ package runtime
 import (
 	"sync/atomic"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/transport"
 )
 
 // MockProtocol is a stub Protocol used in tests. It does no work itself —
@@ -29,22 +29,22 @@ type MockNetworkLayer struct {
 	SendCalled       bool
 	CancelCalled     bool
 
-	outChannel         chan net.TransportMessage
-	outTransportEvents chan net.TransportEvent
+	outChannel         chan transport.TransportMessage
+	outTransportEvents chan transport.TransportEvent
 }
 
 func NewMockNetworkLayer() *MockNetworkLayer {
 	return &MockNetworkLayer{
-		outChannel:         make(chan net.TransportMessage, 1),
-		outTransportEvents: make(chan net.TransportEvent, 1),
+		outChannel:         make(chan transport.TransportMessage, 1),
+		outTransportEvents: make(chan transport.TransportEvent, 1),
 	}
 }
 
-func (m *MockNetworkLayer) Connect(_ net.Host)                              { m.ConnectCalled = true }
-func (m *MockNetworkLayer) Disconnect(_ net.Host)                           { m.DisconnectCalled = true }
-func (m *MockNetworkLayer) Send(_ net.TransportMessage, _ net.Host)         { m.SendCalled = true }
-func (m *MockNetworkLayer) OutChannel() chan net.TransportMessage           { return m.outChannel }
-func (m *MockNetworkLayer) OutTransportEvents() chan net.TransportEvent     { return m.outTransportEvents }
+func (m *MockNetworkLayer) Connect(_ transport.Host)                              { m.ConnectCalled = true }
+func (m *MockNetworkLayer) Disconnect(_ transport.Host)                           { m.DisconnectCalled = true }
+func (m *MockNetworkLayer) Send(_ transport.TransportMessage, _ transport.Host)         { m.SendCalled = true }
+func (m *MockNetworkLayer) OutChannel() chan transport.TransportMessage           { return m.outChannel }
+func (m *MockNetworkLayer) OutTransportEvents() chan transport.TransportEvent     { return m.outTransportEvents }
 func (m *MockNetworkLayer) Cancel()                                         { m.CancelCalled = true }
 
 // localMessage is the canonical test message: just a sender, no payload.
@@ -80,7 +80,7 @@ func (assertError) Error() string { return "expected codec error" }
 // connects to its peer on Init, replies once on inbound, and records
 // receipt for the test to observe.
 type twoSidedProtocol struct {
-	Peer net.Host
+	Peer transport.Host
 
 	ctx      ProtocolContext
 	received atomic.Bool
@@ -97,15 +97,15 @@ func (p *twoSidedProtocol) Init(ctx ProtocolContext) {
 	ctx.Connect(p.Peer)
 }
 
-func (p *twoSidedProtocol) OnSessionConnected(h net.Host) {
-	if !net.CompareHost(h, p.Peer) || p.ctx == nil {
+func (p *twoSidedProtocol) OnSessionConnected(h transport.Host) {
+	if !transport.CompareHost(h, p.Peer) || p.ctx == nil {
 		return
 	}
 	_ = p.ctx.Send(&localMessage{}, p.Peer)
 }
 
-func (p *twoSidedProtocol) OnSessionDisconnected(_ net.Host) {}
+func (p *twoSidedProtocol) OnSessionDisconnected(_ transport.Host) {}
 
-func (p *twoSidedProtocol) handle(_ *localMessage) {
+func (p *twoSidedProtocol) handle(_ *localMessage, _ transport.Host) {
 	p.received.Store(true)
 }

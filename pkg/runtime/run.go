@@ -7,11 +7,11 @@ import (
 )
 
 // Run starts the runtime, installs SIGINT/SIGTERM handlers that call
-// rt.Cancel() on receipt, and blocks until the runtime context is done.
-// It returns the error from rt.Start() if any. Use this from cmd/main
-// instead of calling rt.Start() yourself and then blocking on select{}.
-func Run(rt *Runtime) error {
-	if err := rt.Start(); err != nil {
+// Cancel on receipt, and blocks until the runtime context is done.
+// Returns the error from start if any. Use Run from cmd/main instead of
+// orchestrating Start + signal handling + select{} yourself.
+func (r *Runtime) Run() error {
+	if err := r.start(); err != nil {
 		return err
 	}
 
@@ -21,13 +21,13 @@ func Run(rt *Runtime) error {
 	go func() {
 		select {
 		case <-sigCh:
-			rt.Logger().Info("signal received, cancelling runtime")
-			rt.Cancel()
-		case <-rt.ctx.Done():
+			r.Logger().Info("signal received, cancelling runtime")
+			r.Cancel()
+		case <-r.ctx.Done():
 		}
 		signal.Stop(sigCh)
 	}()
 
-	<-rt.ctx.Done()
+	<-r.ctx.Done()
 	return nil
 }

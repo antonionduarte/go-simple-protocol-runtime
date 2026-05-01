@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/transport"
 )
 
 func TestRegisterProtocol(t *testing.T) {
-	rt := New(net.NewHost(8080, "127.0.0.1"))
+	rt := New(transport.NewHost(8080, "127.0.0.1"))
 
 	protoProtocol := NewProtoProtocol(&MockProtocol{})
 	rt.RegisterProtocol(protoProtocol)
@@ -19,15 +19,15 @@ func TestRegisterProtocol(t *testing.T) {
 }
 
 func TestStartAndCancel(t *testing.T) {
-	self := net.NewHost(0, "127.0.0.1")
+	self := transport.NewHost(0, "127.0.0.1")
 	rt := New(self)
 
 	mockNetworkLayer := NewMockNetworkLayer()
-	rt.RegisterNetworkLayer(mockNetworkLayer)
-	session := net.NewSessionLayer(mockNetworkLayer, self, context.Background(), 0, 0)
-	rt.RegisterSessionLayer(session)
+	rt.registerNetworkLayer(mockNetworkLayer)
+	session := transport.NewSessionLayer(mockNetworkLayer, self, context.Background(), 0, 0)
+	rt.registerSessionLayer(session)
 
-	if err := rt.Start(); err != nil {
+	if err := rt.start(); err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
 
@@ -39,13 +39,13 @@ func TestStartAndCancel(t *testing.T) {
 }
 
 func TestStart_FailsWithoutLayers(t *testing.T) {
-	rt := New(net.NewHost(0, "127.0.0.1"))
-	if err := rt.Start(); err == nil {
+	rt := New(transport.NewHost(0, "127.0.0.1"))
+	if err := rt.start(); err == nil {
 		t.Fatalf("expected Start to fail without network/session layer registered")
 	}
 
-	rt.RegisterNetworkLayer(NewMockNetworkLayer())
-	if err := rt.Start(); err == nil {
+	rt.registerNetworkLayer(NewMockNetworkLayer())
+	if err := rt.start(); err == nil {
 		t.Fatalf("expected Start to fail without session layer registered")
 	}
 }

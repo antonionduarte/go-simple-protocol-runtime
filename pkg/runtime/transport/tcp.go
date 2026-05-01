@@ -1,4 +1,4 @@
-package net
+package transport
 
 import (
 	"bytes"
@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	rtconfig "github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/config"
 )
 
 type (
@@ -101,7 +100,9 @@ func decodeFrames(buf *bytes.Buffer) ([][]byte, error) {
 func NewTCPLayer(self Host, ctx context.Context, outBuf int) *TCPLayer {
 	ctx, cancel := context.WithCancel(ctx)
 	logger := slog.Default().With("component", "transport", "transport", "tcp")
-	outBuf = rtconfig.TransportOutBufferOr(outBuf)
+	if outBuf <= 0 {
+		outBuf = defaultTransportOutBuffer
+	}
 
 	tcpLayer := &TCPLayer{
 		outChannel:         make(chan TransportMessage, outBuf),

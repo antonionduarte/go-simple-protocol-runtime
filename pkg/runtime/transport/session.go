@@ -1,4 +1,4 @@
-package net
+package transport
 
 import (
 	"bytes"
@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"sync"
 
-	rtconfig "github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/config"
 )
 
 // SessionLayer sits between the runtime and a concrete TransportLayer.
@@ -118,8 +117,12 @@ func (s *SessionFailed) Host() Host       { return s.host }
 func NewSessionLayer(transport TransportLayer, self Host, ctx context.Context, eventsBuf, msgsBuf int) *SessionLayer {
 	ctx, cancel := context.WithCancel(ctx)
 	logger := slog.Default().With("component", "session")
-	eventsBuf = rtconfig.SessionEventsBufferOr(eventsBuf)
-	msgsBuf = rtconfig.SessionMessagesBufferOr(msgsBuf)
+	if eventsBuf <= 0 {
+		eventsBuf = defaultSessionEventsBuffer
+	}
+	if msgsBuf <= 0 {
+		msgsBuf = defaultSessionMessagesBuffer
+	}
 	session := &SessionLayer{
 		self:               self,
 		connectChan:        make(chan Host),

@@ -5,6 +5,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"reflect"
+
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/transport"
 )
 
 // Codec is the public typed codec interface a protocol author implements
@@ -53,12 +55,14 @@ func RegisterCodec[M Message](ctx ProtocolContext, c Codec[M]) {
 }
 
 // RegisterHandler registers fn as the handler for messages of type M on
-// the supplied ProtocolContext. The wire identifier is derived from M's
-// Go type name (or M.WireName() if implemented). The framework performs
-// the type assertion before invoking fn.
-func RegisterHandler[M Message](ctx ProtocolContext, fn func(M)) {
-	ctx.registerHandler(WireID[M](), func(raw Message) {
-		fn(raw.(M))
+// the supplied ProtocolContext. Handlers receive both the decoded
+// message and the host that sent it; sender info doesn't need to be
+// encoded on the wire. The wire identifier is derived from M's Go type
+// name (or M.WireName() if implemented). The framework performs the
+// type assertion before invoking fn.
+func RegisterHandler[M Message](ctx ProtocolContext, fn func(M, transport.Host)) {
+	ctx.registerHandler(WireID[M](), func(raw Message, from transport.Host) {
+		fn(raw.(M), from)
 	})
 }
 

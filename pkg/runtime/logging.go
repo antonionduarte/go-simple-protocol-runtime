@@ -4,9 +4,24 @@ import (
 	"context"
 	"log/slog"
 	"os"
-
-	rtconfig "github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/config"
 )
+
+// LoggingConfig controls how the runtime's slog.Logger is built. It is a
+// plain data type — protocols load it from YAML, flags, env, or any
+// other source and pass the result to NewLoggerFromConfig. The framework
+// itself reads no config files.
+type LoggingConfig struct {
+	// Level is one of: "debug", "info", "warn", "error".
+	Level string
+	// Components is an optional list of component-name strings to allow.
+	// When empty (the default) no component filtering is applied — every
+	// log entry passes. When non-empty, only log entries whose
+	// component=<name> attribute is in the list pass through.
+	Components []string
+	// Format controls the handler type: "text" or "json". Empty string
+	// defaults to "text".
+	Format string
+}
 
 type componentFilterHandler struct {
 	next      slog.Handler
@@ -106,7 +121,7 @@ func ParseLogLevel(level string) slog.Level {
 	}
 }
 
-func NewLoggerFromConfig(cfg rtconfig.LoggingConfig) *slog.Logger {
+func NewLoggerFromConfig(cfg LoggingConfig) *slog.Logger {
 	level := ParseLogLevel(cfg.Level)
 
 	var handler slog.Handler

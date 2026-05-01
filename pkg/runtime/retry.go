@@ -5,7 +5,7 @@ import (
 	"math/rand/v2"
 	"time"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/transport"
 )
 
 // RetryPolicy controls the backoff schedule used by ConnectWithRetry.
@@ -72,7 +72,7 @@ func WithRetryPolicy(p RetryPolicy) Option {
 // SessionGivenUpHandler is implemented by a protocol that wants to be
 // notified when ConnectWithRetry exhausts its policy without succeeding.
 type SessionGivenUpHandler interface {
-	OnSessionGivenUp(host net.Host, attempts int)
+	OnSessionGivenUp(host transport.Host, attempts int)
 }
 
 // retryState tracks an in-flight retry schedule for one peer.
@@ -82,23 +82,25 @@ type retryState struct {
 	timer   *time.Timer // the pending backoff timer, if any
 }
 
-// connectWithRetry registers retry intent for host and issues the initial
-// connect. Subsequent SessionFailed / SessionDisconnected events on this
-// host will reschedule a connect using the configured RetryPolicy.
-func (r *Runtime) connectWithRetry(host net.Host) {
+// connectWithRetry registers retry intent for host and issues the
+// initial connect. Subsequent SessionFailed / SessionDisconnected events
+// on this host will reschedule a connect using the configured
+// RetryPolicy. Returns the same kind of validation errors as Connect;
+// transport-level failures surface asynchronously through events.
+func (r *Runtime) connectWithRetry(host transport.Host) error {
 	r.retryMu.Lock()
 	if _, exists := r.connectionRetries[host]; exists {
 		r.retryMu.Unlock()
-		return // already tracked; do nothing
+		return nil // already tracked; do nothing
 	}
 	r.connectionRetries[host] = &retryState{policy: r.retryPolicy.withDefaults()}
 	r.retryMu.Unlock()
-	r.connect(host)
+	return r.connect(host)
 }
 
 // onSessionUpForRetry clears retry state when a session has been
 // successfully established. Returns true if state was cleared.
-func (r *Runtime) onSessionUpForRetry(host net.Host) bool {
+func (r *Runtime) onSessionUpForRetry(host transport.Host) bool {
 	r.retryMu.Lock()
 	defer r.retryMu.Unlock()
 	st, ok := r.connectionRetries[host]
@@ -122,7 +124,7 @@ func (r *Runtime) onSessionUpForRetry(host net.Host) bool {
 // The current implementation does NOT suppress fanout — it simply
 // schedules a retry alongside whatever protocols receive. Returning
 // false keeps fanout enabled.
-func (r *Runtime) onSessionDownForRetry(host net.Host) (giveUp bool, attempts int) {
+func (r *Runtime) onSessionDownForRetry(host transport.Host) (giveUp bool, attempts int) {
 	r.retryMu.Lock()
 	defer r.retryMu.Unlock()
 	st, ok := r.connectionRetries[host]
@@ -157,14 +159,16 @@ func (r *Runtime) onSessionDownForRetry(host net.Host) (giveUp bool, attempts in
 		if r.ctx.Err() != nil {
 			return
 		}
-		r.connect(host)
+		if err := r.connect(host); err != nil {
+			r.Logger().Debug("retry connect failed", "host", host.ToString(), "err", err)
+		}
 	})
 	return false, 0
 }
 
 // stopRetryFor cancels any scheduled retry for host. Called when the user
 // explicitly disconnects.
-func (r *Runtime) stopRetryFor(host net.Host) {
+func (r *Runtime) stopRetryFor(host transport.Host) {
 	r.retryMu.Lock()
 	defer r.retryMu.Unlock()
 	if st, ok := r.connectionRetries[host]; ok {

@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/transport"
 )
 
 type Runtime struct {
-	self                  net.Host
+	self                  transport.Host
 	ctx                   context.Context
 	cancelFunc            func()
 	timerMutex            sync.Mutex
@@ -28,10 +28,10 @@ type Runtime struct {
 
 	retryPolicy       RetryPolicy
 	retryMu           sync.Mutex
-	connectionRetries map[net.Host]*retryState
+	connectionRetries map[transport.Host]*retryState
 
-	networkLayer net.TransportLayer
-	sessionLayer *net.SessionLayer
+	networkLayer transport.TransportLayer
+	sessionLayer *transport.SessionLayer
 
 	logger *slog.Logger
 }
@@ -39,13 +39,13 @@ type Runtime struct {
 // SessionConnectedHandler can be implemented by a protocol that wants to be
 // notified whenever a session is established with some Host.
 type SessionConnectedHandler interface {
-	OnSessionConnected(net.Host)
+	OnSessionConnected(transport.Host)
 }
 
 // SessionDisconnectedHandler can be implemented by a protocol that wants to be
 // notified whenever a session is torn down with some Host.
 type SessionDisconnectedHandler interface {
-	OnSessionDisconnected(net.Host)
+	OnSessionDisconnected(transport.Host)
 }
 
 // Internal representation of session events delivered to each ProtoProtocol.
@@ -59,7 +59,7 @@ const (
 
 type sessionEvent struct {
 	kind     sessionEventType
-	host     net.Host
+	host     transport.Host
 	attempts int // populated for sessionGivenUpEvent
 }
 
@@ -89,7 +89,7 @@ func WithChannelBuffer(_ int) Option {
 // transport layer, and the session layer must be registered before calling
 // Start. The runtime context is created here, so Cancel works regardless
 // of whether Start has been called.
-func New(self net.Host, opts ...Option) *Runtime {
+func New(self transport.Host, opts ...Option) *Runtime {
 	ctx, cancel := context.WithCancel(context.Background())
 	r := &Runtime{
 		self:                  self,
@@ -98,7 +98,7 @@ func New(self net.Host, opts ...Option) *Runtime {
 		ongoingTimers:         make(map[int]*time.Timer),
 		ongoingPeriodicTimers: make(map[int]context.CancelFunc),
 		codecLookup:           make(map[uint64]*ProtoProtocol),
-		connectionRetries:     make(map[net.Host]*retryState),
+		connectionRetries:     make(map[transport.Host]*retryState),
 		logger:                slog.Default().With("component", "runtime"),
 	}
 	for _, opt := range opts {
@@ -107,7 +107,7 @@ func New(self net.Host, opts ...Option) *Runtime {
 	return r
 }
 
-func (r *Runtime) Self() net.Host { return r.self }
+func (r *Runtime) Self() transport.Host { return r.self }
 
 func (r *Runtime) Logger() *slog.Logger {
 	if r.logger == nil {
@@ -116,11 +116,12 @@ func (r *Runtime) Logger() *slog.Logger {
 	return r.logger
 }
 
-// Start launches all long-lived goroutines owned by the runtime
-// (protocol event loops, session event pump, and the main dispatcher).
-// It returns an error if either the network or session layer was not
-// registered, or if Cancel has already been called on this runtime.
-func (r *Runtime) Start() error {
+// start launches all long-lived goroutines owned by the runtime
+// (protocol event loops, session event pump, and the main dispatcher)
+// and returns immediately. It is the synchronous half of Run: tests
+// inside this package use start() directly when they need "register
+// then verify" without blocking; user code should call Run instead.
+func (r *Runtime) start() error {
 	if r.networkLayer == nil {
 		return errors.New("runtime: network layer not registered")
 	}
@@ -128,7 +129,7 @@ func (r *Runtime) Start() error {
 		return errors.New("runtime: session layer not registered")
 	}
 	if err := r.ctx.Err(); err != nil {
-		return errors.New("runtime: cannot Start a runtime that has been cancelled")
+		return errors.New("runtime: cannot start a runtime that has been cancelled")
 	}
 
 	r.Logger().Info("runtime starting")
@@ -142,21 +143,16 @@ func (r *Runtime) Start() error {
 	return nil
 }
 
-func (r *Runtime) StartWithDuration(duration time.Duration) error {
-	if err := r.Start(); err != nil {
-		return err
-	}
-	time.AfterFunc(duration, func() {
-		r.Cancel()
-	})
-	return nil
-}
-
-func (r *Runtime) RegisterNetworkLayer(networkLayer net.TransportLayer) {
+// registerNetworkLayer attaches a TransportLayer. Most users wire this
+// via WithTCPTransport — only test code that needs to inject a mock
+// transport reaches in here directly.
+func (r *Runtime) registerNetworkLayer(networkLayer transport.TransportLayer) {
 	r.networkLayer = networkLayer
 }
 
-func (r *Runtime) RegisterSessionLayer(sessionLayer *net.SessionLayer) {
+// registerSessionLayer attaches a SessionLayer. As with the transport
+// layer, normal callers wire this via WithTCPTransport.
+func (r *Runtime) registerSessionLayer(sessionLayer *transport.SessionLayer) {
 	r.sessionLayer = sessionLayer
 }
 
@@ -177,13 +173,33 @@ func (r *Runtime) RegisterProtocol(protocol *ProtoProtocol) {
 }
 
 // connect / disconnect are the runtime-internal entry points used by
-// ProtocolContext implementations. disconnect also clears any tracked
-// retry intent so a user-initiated disconnect halts further reconnect
-// attempts.
-func (r *Runtime) connect(host net.Host) { r.sessionLayer.Connect(host) }
-func (r *Runtime) disconnect(host net.Host) {
+// ProtocolContext implementations. They validate that the runtime is
+// usable and return a sync error if not; transport-level failures still
+// surface asynchronously through SessionFailed events.
+//
+// disconnect also clears any tracked retry intent so a user-initiated
+// disconnect halts further reconnect attempts.
+func (r *Runtime) connect(host transport.Host) error {
+	if r.sessionLayer == nil {
+		return errors.New("runtime: session layer not registered")
+	}
+	if err := r.ctx.Err(); err != nil {
+		return err
+	}
+	r.sessionLayer.Connect(host)
+	return nil
+}
+
+func (r *Runtime) disconnect(host transport.Host) error {
+	if r.sessionLayer == nil {
+		return errors.New("runtime: session layer not registered")
+	}
 	r.stopRetryFor(host)
+	if err := r.ctx.Err(); err != nil {
+		return err
+	}
 	r.sessionLayer.Disconnect(host)
+	return nil
 }
 
 func (r *Runtime) Cancel() {
@@ -271,12 +287,12 @@ func (r *Runtime) startSessionEvents(ctx context.Context) {
 // internal sessionEvent kind, updates retry bookkeeping if applicable, and
 // fans the event out to every registered protocol. Returns false if the
 // runtime context fired during fanout.
-func (r *Runtime) dispatchSessionEvent(ctx context.Context, ev net.SessionEvent) bool {
+func (r *Runtime) dispatchSessionEvent(ctx context.Context, ev transport.SessionEvent) bool {
 	switch e := ev.(type) {
-	case *net.SessionConnected:
+	case *transport.SessionConnected:
 		r.onSessionUpForRetry(e.Host())
 		return r.fanoutSessionEvent(ctx, sessionEvent{kind: sessionConnectedEvent, host: e.Host()})
-	case *net.SessionDisconnected:
+	case *transport.SessionDisconnected:
 		giveUp, attempts := r.onSessionDownForRetry(e.Host())
 		if giveUp {
 			if !r.fanoutSessionEvent(ctx, sessionEvent{kind: sessionGivenUpEvent, host: e.Host(), attempts: attempts}) {
@@ -284,7 +300,7 @@ func (r *Runtime) dispatchSessionEvent(ctx context.Context, ev net.SessionEvent)
 			}
 		}
 		return r.fanoutSessionEvent(ctx, sessionEvent{kind: sessionDisconnectedEvent, host: e.Host()})
-	case *net.SessionFailed:
+	case *transport.SessionFailed:
 		giveUp, attempts := r.onSessionDownForRetry(e.Host())
 		if giveUp {
 			return r.fanoutSessionEvent(ctx, sessionEvent{kind: sessionGivenUpEvent, host: e.Host(), attempts: attempts})
@@ -312,14 +328,12 @@ func (r *Runtime) fanoutSessionEvent(ctx context.Context, ev sessionEvent) bool 
 	return true
 }
 
-type senderSetter interface {
-	SetSender(net.Host)
-}
-
 // processMessage decodes the wire id from the application-layer payload,
 // looks up the owning protocol via the runtime's codecLookup map, decodes
-// the message, and pushes it onto that protocol's messageChannel.
-func (r *Runtime) processMessage(buffer bytes.Buffer, from net.Host) {
+// the message, and pushes a (msg, from) envelope onto that protocol's
+// messageChannel. Sender info is delivered to handlers via the envelope's
+// from field, not via fields on the message itself.
+func (r *Runtime) processMessage(buffer bytes.Buffer, from transport.Host) {
 	logger := r.Logger()
 
 	var wireID uint64
@@ -361,10 +375,6 @@ func (r *Runtime) processMessage(buffer bytes.Buffer, from net.Host) {
 		return
 	}
 
-	if m, ok := message.(senderSetter); ok {
-		m.SetSender(from)
-	}
-
 	logger.Debug("dispatching message",
 		"from", from.ToString(),
 		"wireID", fmt.Sprintf("%#x", wireID),
@@ -374,7 +384,7 @@ func (r *Runtime) processMessage(buffer bytes.Buffer, from net.Host) {
 		ctx = context.Background()
 	}
 	select {
-	case protocol.messageChannel <- message:
+	case protocol.messageChannel <- messageEnvelope{msg: message, from: from}:
 	case <-ctx.Done():
 	}
 }

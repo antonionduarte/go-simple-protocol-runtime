@@ -2,7 +2,7 @@
 // protocol runtime's wire format. Variable-length values (strings, byte
 // slices) are length-prefixed so they can be embedded inside a fixed-
 // length message envelope without ambiguity. Host serialization lives in
-// `pkg/runtime/net` (alongside the Host type itself) and is built on top
+// `pkg/runtime/transport` (alongside the Host type itself) and is built on top
 // of these primitives.
 package wire
 

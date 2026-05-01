@@ -5,15 +5,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/transport"
 )
 
 // TestRuntime_TwoRuntimes_PingPong stands up two independent runtimes on
 // localhost ports and asserts that they complete a session handshake and
 // exchange at least one application message in each direction.
 func TestRuntime_TwoRuntimes_PingPong(t *testing.T) {
-	hostA := net.NewHost(7301, "127.0.0.1")
-	hostB := net.NewHost(7302, "127.0.0.1")
+	hostA := transport.NewHost(7301, "127.0.0.1")
+	hostB := transport.NewHost(7302, "127.0.0.1")
 
 	protoA := &twoSidedProtocol{Peer: hostB}
 	protoB := &twoSidedProtocol{Peer: hostA}
@@ -21,11 +21,11 @@ func TestRuntime_TwoRuntimes_PingPong(t *testing.T) {
 	rtA := buildRuntime(t, hostA, protoA)
 	rtB := buildRuntime(t, hostB, protoB)
 
-	if err := rtA.Start(); err != nil {
+	if err := rtA.start(); err != nil {
 		t.Fatalf("rtA.Start: %v", err)
 	}
 	defer rtA.Cancel()
-	if err := rtB.Start(); err != nil {
+	if err := rtB.start(); err != nil {
 		t.Fatalf("rtB.Start: %v", err)
 	}
 	defer rtB.Cancel()
@@ -42,14 +42,14 @@ func TestRuntime_TwoRuntimes_PingPong(t *testing.T) {
 
 // buildRuntime wires a fresh Runtime + TCPLayer + SessionLayer + the given
 // protocol implementation.
-func buildRuntime(t *testing.T, self net.Host, p Protocol) *Runtime {
+func buildRuntime(t *testing.T, self transport.Host, p Protocol) *Runtime {
 	t.Helper()
 	rt := New(self)
 	ctx := context.Background()
-	tcp := net.NewTCPLayer(self, ctx, 0)
-	session := net.NewSessionLayer(tcp, self, ctx, 0, 0)
-	rt.RegisterNetworkLayer(tcp)
-	rt.RegisterSessionLayer(session)
+	tcp := transport.NewTCPLayer(self, ctx, 0)
+	session := transport.NewSessionLayer(tcp, self, ctx, 0, 0)
+	rt.registerNetworkLayer(tcp)
+	rt.registerSessionLayer(session)
 	rt.RegisterProtocol(NewProtoProtocol(p))
 	return rt
 }
@@ -58,32 +58,32 @@ func buildRuntime(t *testing.T, self net.Host, p Protocol) *Runtime {
 // calls Cancel and ensures shutdown completes without further events being
 // emitted on the local session layer.
 func TestRuntime_LifecycleShutdown(t *testing.T) {
-	hostA := net.NewHost(7303, "127.0.0.1")
-	hostB := net.NewHost(7304, "127.0.0.1")
+	hostA := transport.NewHost(7303, "127.0.0.1")
+	hostB := transport.NewHost(7304, "127.0.0.1")
 
 	protoA := &twoSidedProtocol{Peer: hostB}
 	protoB := &twoSidedProtocol{Peer: hostA}
 
 	rtA := New(hostA)
 	ctxA := context.Background()
-	tcpA := net.NewTCPLayer(hostA, ctxA, 0)
-	sessionA := net.NewSessionLayer(tcpA, hostA, ctxA, 0, 0)
-	rtA.RegisterNetworkLayer(tcpA)
-	rtA.RegisterSessionLayer(sessionA)
+	tcpA := transport.NewTCPLayer(hostA, ctxA, 0)
+	sessionA := transport.NewSessionLayer(tcpA, hostA, ctxA, 0, 0)
+	rtA.registerNetworkLayer(tcpA)
+	rtA.registerSessionLayer(sessionA)
 	rtA.RegisterProtocol(NewProtoProtocol(protoA))
 
 	rtB := New(hostB)
 	ctxB := context.Background()
-	tcpB := net.NewTCPLayer(hostB, ctxB, 0)
-	sessionB := net.NewSessionLayer(tcpB, hostB, ctxB, 0, 0)
-	rtB.RegisterNetworkLayer(tcpB)
-	rtB.RegisterSessionLayer(sessionB)
+	tcpB := transport.NewTCPLayer(hostB, ctxB, 0)
+	sessionB := transport.NewSessionLayer(tcpB, hostB, ctxB, 0, 0)
+	rtB.registerNetworkLayer(tcpB)
+	rtB.registerSessionLayer(sessionB)
 	rtB.RegisterProtocol(NewProtoProtocol(protoB))
 
-	if err := rtA.Start(); err != nil {
+	if err := rtA.start(); err != nil {
 		t.Fatalf("rtA.Start: %v", err)
 	}
-	if err := rtB.Start(); err != nil {
+	if err := rtB.start(); err != nil {
 		t.Fatalf("rtB.Start: %v", err)
 	}
 
@@ -107,18 +107,18 @@ func TestRuntime_LifecycleShutdown(t *testing.T) {
 func TestRuntime_RapidStartCancel(t *testing.T) {
 	const iterations = 50
 	for i := 0; i < iterations; i++ {
-		self := net.NewHost(0, "127.0.0.1")
+		self := transport.NewHost(0, "127.0.0.1")
 		rt := New(self)
 
 		mock := NewMockNetworkLayer()
-		rt.RegisterNetworkLayer(mock)
-		sess := net.NewSessionLayer(mock, self, context.Background(), 0, 0)
-		rt.RegisterSessionLayer(sess)
+		rt.registerNetworkLayer(mock)
+		sess := transport.NewSessionLayer(mock, self, context.Background(), 0, 0)
+		rt.registerSessionLayer(sess)
 
 		proto := NewProtoProtocol(&MockProtocol{})
 		rt.RegisterProtocol(proto)
 
-		if err := rt.Start(); err != nil {
+		if err := rt.start(); err != nil {
 			t.Fatalf("iteration %d: Start failed: %v", i, err)
 		}
 		rt.setupPeriodicTimer(proto, &rapidTickTimer{id: 1}, time.Millisecond)

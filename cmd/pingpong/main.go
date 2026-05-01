@@ -5,14 +5,14 @@ import (
 	"flag"
 	"log/slog"
 
+	rtconfig "github.com/antonionduarte/go-simple-protocol-runtime/cmd/pingpong/config"
 	"github.com/antonionduarte/go-simple-protocol-runtime/cmd/pingpong/protocol"
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime"
-	rtconfig "github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/config"
-	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/net"
+	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/runtime/transport"
 )
 
 func main() {
-	configPath := flag.String("config", "", "YAML config file for logging/runtime buffers (required)")
+	configPath := flag.String("config", "", "YAML config file for logging (required)")
 	selfIP := flag.String("self-ip", "127.0.0.1", "IP address for this pingpong node")
 	selfPort := flag.Int("self-port", 0, "TCP port for this pingpong node (required)")
 	peerIP := flag.String("peer-ip", "127.0.0.1", "IP address for the peer pingpong node")
@@ -37,24 +37,21 @@ func main() {
 	logger := runtime.NewLoggerFromConfig(cfg.Logging)
 	slog.SetDefault(logger)
 
-	myself := net.NewHost(*selfPort, *selfIP)
-	peer := net.NewHost(*peerPort, *peerIP)
+	myself := transport.NewHost(*selfPort, *selfIP)
+	peer := transport.NewHost(*peerPort, *peerIP)
 
 	logger.Info("starting pingpong node",
 		"self", (&myself).ToString(),
 		"peer", (&peer).ToString(),
 	)
 
-	rt := runtime.New(myself, runtime.WithLogger(logger))
-
-	ctx := context.Background()
-	tcp := net.NewTCPLayer(myself, ctx, cfg.Runtime.ChannelBuffer)
-	session := net.NewSessionLayer(tcp, myself, ctx, cfg.Runtime.ChannelBuffer, cfg.Runtime.ChannelBuffer)
-	rt.RegisterNetworkLayer(tcp)
-	rt.RegisterSessionLayer(session)
+	rt := runtime.New(myself,
+		runtime.WithLogger(logger),
+		runtime.WithTCPTransport(context.Background()),
+	)
 	rt.Register(protocol.NewPingPongProtocol(peer))
 
-	if err := runtime.Run(rt); err != nil {
+	if err := rt.Run(); err != nil {
 		panic(err)
 	}
 }

@@ -7,8 +7,6 @@ import (
 	"hash/fnv"
 	"reflect"
 	"sync"
-
-	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/transport"
 )
 
 // WireNamer lets a message type freeze its wire identifier across Go-type
@@ -116,24 +114,9 @@ func (a codecAdapter[M]) unmarshal(data []byte) (Message, error) {
 	return a.c.Unmarshal(data)
 }
 
-// RegisterCodec registers a Codec[M] under M's wire identifier on the
-// supplied ProtocolContext. The wire identifier is derived from M's Go
-// type name (or M.WireName() if implemented).
-func RegisterCodec[M Message](ctx ProtocolContext, c Codec[M]) {
-	ctx.registerCodec(WireID[M](), codecAdapter[M]{c: c})
-}
-
-// RegisterHandler registers fn as the handler for messages of type M on
-// the supplied ProtocolContext. Handlers receive both the decoded
-// message and the host that sent it; sender info doesn't need to be
-// encoded on the wire. The wire identifier is derived from M's Go type
-// name (or M.WireName() if implemented). The framework performs the
-// type assertion before invoking fn.
-func RegisterHandler[M Message](ctx ProtocolContext, fn func(M, transport.Host)) {
-	ctx.registerHandler(WireID[M](), func(raw Message, from transport.Host) {
-		fn(raw.(M), from)
-	})
-}
+// (RegisterCodec[M] and RegisterHandler[M] live in protocol.go alongside
+// ProtocolContext — they're free-function workarounds for the lack of
+// generic methods on Go interfaces, not codec primitives.)
 
 // BinaryCodec is a Codec[M] that encodes M with encoding/binary using
 // little-endian byte order. It works for any M whose fields are

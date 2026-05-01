@@ -238,3 +238,24 @@ func (p *protoProtocol) deliverSessionEvent(ev sessionEvent) {
 		}
 	}
 }
+
+// RegisterCodec registers a Codec[M] under M's wire identifier on the
+// supplied ProtocolContext. Free function rather than a method because
+// Go interfaces can't have generic methods; the typed registration
+// flows through ctx.registerCodec internally. Wire id derives from
+// M's Go type name (or M.WireName() if implemented).
+func RegisterCodec[M Message](ctx ProtocolContext, c Codec[M]) {
+	ctx.registerCodec(WireID[M](), codecAdapter[M]{c: c})
+}
+
+// RegisterHandler registers fn as the handler for messages of type M
+// on the supplied ProtocolContext. Handlers receive both the decoded
+// message and the host that sent it; sender info doesn't need to be
+// encoded on the wire. Free function for the same reason as
+// RegisterCodec — generic methods aren't allowed on interfaces. The
+// framework performs the type assertion before invoking fn.
+func RegisterHandler[M Message](ctx ProtocolContext, fn func(M, transport.Host)) {
+	ctx.registerHandler(WireID[M](), func(raw Message, from transport.Host) {
+		fn(raw.(M), from)
+	})
+}

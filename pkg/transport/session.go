@@ -3,6 +3,7 @@ package transport
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -78,6 +79,14 @@ type (
 	SessionConnected struct {
 		host Host
 	}
+	// SessionVersionMismatch is emitted when an inbound Hello carries
+	// a wire-format version this build does not support. The peer
+	// connection is closed; subsequent retries will keep failing the
+	// same way until either side is upgraded.
+	SessionVersionMismatch struct {
+		host       Host
+		peerVersion uint8
+	}
 
 	// LayerIdentifier differentiates between application-level payloads and
 	// session/handshake payloads carried over the same transport.
@@ -109,9 +118,15 @@ const (
 )
 
 // Accessor methods to implement the SessionEvent interface:
-func (s *SessionConnected) Host() Host    { return s.host }
-func (s *SessionDisconnected) Host() Host { return s.host }
-func (s *SessionFailed) Host() Host       { return s.host }
+func (s *SessionConnected) Host() Host       { return s.host }
+func (s *SessionDisconnected) Host() Host    { return s.host }
+func (s *SessionFailed) Host() Host          { return s.host }
+func (s *SessionVersionMismatch) Host() Host { return s.host }
+
+// PeerVersion is the wire-format version the offending peer
+// announced. Useful for logs / metrics to spot which side needs the
+// upgrade.
+func (s *SessionVersionMismatch) PeerVersion() uint8 { return s.peerVersion }
 
 func NewSessionLayer(transport Layer, self Host, ctx context.Context, eventsBuf, msgsBuf int) *SessionLayer {
 	ctx, cancel := context.WithCancel(ctx)
@@ -228,6 +243,14 @@ func (s *sessionConn) handleHandshakeMessage(msg SessionMessage) {
 		s.layer.logger.Error("session FSM: failed to parse handshake payload",
 			"transport", s.transportHost.String(),
 			"err", err)
+		// Version mismatch is reported as its own event so observers
+		// can distinguish "peer speaks the wrong dialect" from "peer
+		// crashed mid-handshake". The connection is then torn down by
+		// the transport on the next read error.
+		if errors.Is(err, ErrVersionMismatch) {
+			s.layer.outChannelEvents <- &SessionVersionMismatch{host: s.transportHost}
+			s.layer.transport.Disconnect(s.transportHost)
+		}
 		return
 	}
 
@@ -338,15 +361,30 @@ func (s *sessionConn) handleFailed() {
 	s.layer.emitEvent(&SessionFailed{host: logical})
 }
 
+// ProtocolVersion is the wire-format version this build advertises in
+// every Hello handshake. Receivers reject Hello messages with a
+// mismatched version, emitting a SessionVersionMismatch event and
+// closing the underlying connection. Bump this whenever the framing
+// or handshake structure changes in a way that prior builds can't
+// handle.
+const ProtocolVersion uint8 = 1
+
+// ErrVersionMismatch is wrapped into the parse error returned by
+// parseHandshakePayload when the peer's Hello carries a version this
+// build doesn't speak. The session layer translates that into a
+// SessionVersionMismatch event for upstream observers.
+var ErrVersionMismatch = errors.New("session handshake: protocol version mismatch")
+
 // encodeHello builds a session-layer handshake payload announcing the
 // sender's logical Host. Layout:
 //
-//	[HandshakeType(1 byte, HandshakeHello) || WriteHost(self)]
+//	[HandshakeType(1 byte, HandshakeHello) || Version(1 byte) || WriteHost(self)]
 //
 // Returns an error if the host cannot be serialized.
 func encodeHello(h Host) (bytes.Buffer, error) {
 	buf := bytes.NewBuffer(nil)
 	buf.WriteByte(byte(HandshakeHello))
+	buf.WriteByte(ProtocolVersion)
 	if err := WriteHost(buf, h); err != nil {
 		return bytes.Buffer{}, fmt.Errorf("encodeHello: %w", err)
 	}
@@ -366,7 +404,10 @@ func encodeAck() bytes.Buffer {
 //
 //	[HandshakeType(1 byte) || Data...]
 //
-// where Data is wire.WriteHost(host) for HandshakeHello and empty for HandshakeAck.
+// where Data is [Version(1 byte) || WriteHost(host)] for HandshakeHello
+// and empty for HandshakeAck. A version-byte mismatch is flagged with
+// ErrVersionMismatch so the session layer can emit a typed event
+// instead of dropping the connection silently.
 func parseHandshakePayload(buf *bytes.Buffer) (HandshakeType, Host, error) {
 	var zeroHost Host
 	if buf.Len() == 0 {
@@ -380,6 +421,14 @@ func parseHandshakePayload(buf *bytes.Buffer) (HandshakeType, Host, error) {
 
 	switch HandshakeType(msgType) {
 	case HandshakeHello:
+		version, err := buf.ReadByte()
+		if err != nil {
+			return 0, zeroHost, fmt.Errorf("HandshakeHello: read version: %w", err)
+		}
+		if version != ProtocolVersion {
+			return HandshakeHello, zeroHost,
+				fmt.Errorf("%w: got=%d expected=%d", ErrVersionMismatch, version, ProtocolVersion)
+		}
 		host, err := ReadHost(buf)
 		if err != nil {
 			return 0, zeroHost, fmt.Errorf("HandshakeHello: %w", err)

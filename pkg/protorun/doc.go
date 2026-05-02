@@ -24,8 +24,8 @@
 //	type MyProto struct{ peer transport.Host }
 //
 //	func (p *MyProto) Start(ctx protorun.ProtocolContext) {
-//	    protorun.RegisterCodec[*MyMsg](ctx, protorun.BinaryCodec[*MyMsg]{})
-//	    protorun.RegisterHandler[*MyMsg](ctx, p.handle)
+//	    protorun.RegisterCodec(ctx, protorun.BinaryCodec[*MyMsg]{})
+//	    protorun.RegisterHandler(ctx, p.handle)
 //	}
 //	func (p *MyProto) Init(ctx protorun.ProtocolContext) {
 //	    _ = ctx.Connect(p.peer)

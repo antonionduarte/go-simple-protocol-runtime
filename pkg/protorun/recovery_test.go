@@ -58,7 +58,7 @@ type panicReqServer struct {
 }
 
 func (s *panicReqServer) Start(ctx ProtocolContext) {
-	RegisterRequestHandler[*echoReq, *echoRep](ctx, func(_ *echoReq, _ Responder[*echoRep]) {
+	RegisterRequestHandler(ctx, func(_ *echoReq, _ Responder[*echoRep]) {
 		panic("request boom")
 	})
 }
@@ -70,7 +70,7 @@ func (s *panicReqServer) Init(_ ProtocolContext) {}
 type panicReqServerNoHandler struct{}
 
 func (panicReqServerNoHandler) Start(ctx ProtocolContext) {
-	RegisterRequestHandler[*echoReq, *echoRep](ctx, func(_ *echoReq, _ Responder[*echoRep]) {
+	RegisterRequestHandler(ctx, func(_ *echoReq, _ Responder[*echoRep]) {
 		panic("silent boom")
 	})
 }
@@ -85,7 +85,7 @@ type panicNotifSub struct {
 }
 
 func (s *panicNotifSub) Start(ctx ProtocolContext) {
-	SubscribeNotification[tickNotif](ctx, func(_ tickNotif) {
+	SubscribeNotification(ctx, func(_ tickNotif) {
 		s.delivered.Add(1)
 		panic("notif boom")
 	})
@@ -108,7 +108,7 @@ type recursivePanicProto struct {
 }
 
 func (p *recursivePanicProto) Start(ctx ProtocolContext) {
-	RegisterRequestHandler[*echoReq, *echoRep](ctx, func(_ *echoReq, _ Responder[*echoRep]) {
+	RegisterRequestHandler(ctx, func(_ *echoReq, _ Responder[*echoRep]) {
 		panic("user boom")
 	})
 }
@@ -122,7 +122,7 @@ type secondCallProto struct {
 }
 
 func (s *secondCallProto) Start(ctx ProtocolContext) {
-	RegisterRequestHandler[*echoReq, *echoRep](ctx, func(req *echoReq, r Responder[*echoRep]) {
+	RegisterRequestHandler(ctx, func(req *echoReq, r Responder[*echoRep]) {
 		if s.calls.Add(1) == 1 {
 			panic("first-call boom")
 		}
@@ -141,12 +141,12 @@ type pairOfRequestors struct {
 
 func (p *pairOfRequestors) Start(_ ProtocolContext) {}
 func (p *pairOfRequestors) Init(ctx ProtocolContext) {
-	SendRequest[*echoReq, *echoRep](ctx, &echoReq{Msg: "one"}, func(rep *echoRep, err error) {
+	SendRequest(ctx, &echoReq{Msg: "one"}, func(rep *echoRep, err error) {
 		p.first.set(rep, err)
 		// Chain: send the second request from inside the first reply's
 		// callback so it lands on the same event loop *after* the first
 		// reply is processed.
-		SendRequest[*echoReq, *echoRep](ctx, &echoReq{Msg: "two"}, func(rep *echoRep, err error) {
+		SendRequest(ctx, &echoReq{Msg: "two"}, func(rep *echoRep, err error) {
 			p.second.set(rep, err)
 		})
 	})

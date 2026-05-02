@@ -29,7 +29,7 @@ func TestProcessMessage_DispatchesToHandler(t *testing.T) {
 	proto := newProtoProtocol(&MockProtocol{}, 0)
 	rt.registerProtocol(proto)
 	proto.ensureContext()
-	RegisterCodec[*localMessage](proto.ctx, localCodec{})
+	RegisterCodec(proto.ctx, localCodec{})
 
 	frame := processFrame(t, WireID[*localMessage](), nil)
 	rt.processMessage(frame, transport.NewHost(9999, "127.0.0.1"))
@@ -60,7 +60,7 @@ func TestProcessMessage_DecodeError(t *testing.T) {
 	proto := newProtoProtocol(&MockProtocol{}, 0)
 	rt.registerProtocol(proto)
 	proto.ensureContext()
-	RegisterCodec[*failingMessageBM](proto.ctx, failingCodec{})
+	RegisterCodec(proto.ctx, failingCodec{})
 
 	frame := processFrame(t, WireID[*failingMessageBM](), nil)
 	rt.processMessage(frame, transport.NewHost(9999, "127.0.0.1"))

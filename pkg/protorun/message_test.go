@@ -20,7 +20,7 @@ func TestSendMessage_CodecError(t *testing.T) {
 	// path that updates codecLookup. Calling Start() would do this, but
 	// avoiding it keeps the test isolated to sendMessage.
 	proto.ensureContext()
-	RegisterCodec[*failingMessageBM](proto.ctx, failingCodec{})
+	RegisterCodec(proto.ctx, failingCodec{})
 
 	msg := &failingMessageBM{}
 	if err := rt.sendMessage(msg, transport.NewHost(8000, "127.0.0.1")); err == nil {

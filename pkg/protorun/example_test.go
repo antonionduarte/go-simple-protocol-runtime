@@ -21,8 +21,8 @@ type myMessage struct {
 type echoProtocol struct{}
 
 func (echoProtocol) Start(ctx protorun.ProtocolContext) {
-	protorun.RegisterCodec[*myMessage](ctx, protorun.BinaryCodec[*myMessage]{})
-	protorun.RegisterHandler[*myMessage](ctx, func(_ *myMessage, _ transport.Host) {})
+	protorun.RegisterCodec(ctx, protorun.BinaryCodec[*myMessage]{})
+	protorun.RegisterHandler(ctx, func(_ *myMessage, _ transport.Host) {})
 }
 func (echoProtocol) Init(_ protorun.ProtocolContext) {}
 
@@ -54,7 +54,7 @@ func ExampleRegisterHandler() {
 	if ctx == nil {                  // illustrative guard for the godoc snippet
 		return
 	}
-	protorun.RegisterHandler[*myMessage](ctx, func(m *myMessage, from transport.Host) {
+	protorun.RegisterHandler(ctx, func(m *myMessage, from transport.Host) {
 		fmt.Printf("got seq=%d from=%s\n", m.Seq, (&from).ToString())
 	})
 }
@@ -67,7 +67,7 @@ func ExampleRegisterCodec() {
 	if ctx == nil {
 		return
 	}
-	protorun.RegisterCodec[*myMessage](ctx, protorun.BinaryCodec[*myMessage]{})
+	protorun.RegisterCodec(ctx, protorun.BinaryCodec[*myMessage]{})
 }
 
 // ExampleWithRetryPolicy configures opt-in reconnect on a runtime. The

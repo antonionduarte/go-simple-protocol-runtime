@@ -233,7 +233,7 @@ func SendRequest[Req Request, Rep Reply](
 	req Req,
 	onReply func(Rep, error),
 ) {
-	SendRequestWithTimeout[Req, Rep](ctx, req, 0, onReply)
+	SendRequestWithTimeout(ctx, req, 0, onReply)
 }
 
 // SendRequestWithTimeout is SendRequest with an explicit per-call

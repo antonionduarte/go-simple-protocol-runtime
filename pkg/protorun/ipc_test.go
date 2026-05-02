@@ -93,7 +93,7 @@ func (r *echoReplyResult) wait(d time.Duration) bool {
 type echoServer struct{}
 
 func (echoServer) Start(ctx ProtocolContext) {
-	RegisterRequestHandler[*echoReq, *echoRep](ctx, func(req *echoReq, r Responder[*echoRep]) {
+	RegisterRequestHandler(ctx, func(req *echoReq, r Responder[*echoRep]) {
 		r.Reply(&echoRep{Got: req.Msg})
 	})
 }
@@ -104,7 +104,7 @@ func (echoServer) Init(_ ProtocolContext) {}
 type asyncEchoServer struct{}
 
 func (asyncEchoServer) Start(ctx ProtocolContext) {
-	RegisterRequestHandler[*echoReq, *echoRep](ctx, func(req *echoReq, r Responder[*echoRep]) {
+	RegisterRequestHandler(ctx, func(req *echoReq, r Responder[*echoRep]) {
 		go func() {
 			time.Sleep(10 * time.Millisecond)
 			r.Reply(&echoRep{Got: req.Msg})
@@ -120,7 +120,7 @@ type silentServer struct {
 }
 
 func (s *silentServer) Start(ctx ProtocolContext) {
-	RegisterRequestHandler[*echoReq, *echoRep](ctx, func(_ *echoReq, r Responder[*echoRep]) {
+	RegisterRequestHandler(ctx, func(_ *echoReq, r Responder[*echoRep]) {
 		s.captured <- r
 	})
 }
@@ -132,7 +132,7 @@ var errServerBoom = errors.New("server boom")
 type failingServer struct{}
 
 func (failingServer) Start(ctx ProtocolContext) {
-	RegisterRequestHandler[*echoReq, *echoRep](ctx, func(_ *echoReq, r Responder[*echoRep]) {
+	RegisterRequestHandler(ctx, func(_ *echoReq, r Responder[*echoRep]) {
 		r.Fail(errServerBoom)
 	})
 }
@@ -146,7 +146,7 @@ type requestor struct {
 
 func (r *requestor) Start(_ ProtocolContext) {}
 func (r *requestor) Init(ctx ProtocolContext) {
-	SendRequest[*echoReq, *echoRep](ctx, &echoReq{Msg: r.msg}, func(rep *echoRep, err error) {
+	SendRequest(ctx, &echoReq{Msg: r.msg}, func(rep *echoRep, err error) {
 		r.target.set(rep, err)
 	})
 }
@@ -159,7 +159,7 @@ type timeoutRequestor struct {
 
 func (r *timeoutRequestor) Start(_ ProtocolContext) {}
 func (r *timeoutRequestor) Init(ctx ProtocolContext) {
-	SendRequestWithTimeout[*echoReq, *echoRep](ctx, &echoReq{Msg: "ignored"}, r.timeout,
+	SendRequestWithTimeout(ctx, &echoReq{Msg: "ignored"}, r.timeout,
 		func(rep *echoRep, err error) {
 			r.target.set(rep, err)
 		})
@@ -172,7 +172,7 @@ type orphanRequestor struct {
 
 func (r *orphanRequestor) Start(_ ProtocolContext) {}
 func (r *orphanRequestor) Init(ctx ProtocolContext) {
-	SendRequest[*orphanReq, *echoRep](ctx, &orphanReq{}, func(_ *echoRep, err error) {
+	SendRequest(ctx, &orphanReq{}, func(_ *echoRep, err error) {
 		r.gotErr <- err
 	})
 }
@@ -183,12 +183,12 @@ type selfHandler struct {
 }
 
 func (s *selfHandler) Start(ctx ProtocolContext) {
-	RegisterRequestHandler[*echoReq, *echoRep](ctx, func(req *echoReq, r Responder[*echoRep]) {
+	RegisterRequestHandler(ctx, func(req *echoReq, r Responder[*echoRep]) {
 		r.Reply(&echoRep{Got: req.Msg + "-self"})
 	})
 }
 func (s *selfHandler) Init(ctx ProtocolContext) {
-	SendRequest[*echoReq, *echoRep](ctx, &echoReq{Msg: "hi"}, func(rep *echoRep, err error) {
+	SendRequest(ctx, &echoReq{Msg: "hi"}, func(rep *echoRep, err error) {
 		s.target.set(rep, err)
 	})
 }
@@ -206,7 +206,7 @@ func newNotifSubscriber() *notifSubscriber {
 }
 
 func (s *notifSubscriber) Start(ctx ProtocolContext) {
-	SubscribeNotification[tickNotif](ctx, func(n tickNotif) {
+	SubscribeNotification(ctx, func(n tickNotif) {
 		s.mu.Lock()
 		s.received = append(s.received, n)
 		s.mu.Unlock()
@@ -228,7 +228,7 @@ type unsubscriber struct {
 }
 
 func (u *unsubscriber) Start(ctx ProtocolContext) {
-	SubscribeNotification[tickNotif](ctx, func(_ tickNotif) {
+	SubscribeNotification(ctx, func(_ tickNotif) {
 		u.called.Add(1)
 	})
 }
@@ -243,7 +243,7 @@ type publisher struct {
 
 func (p *publisher) Start(_ ProtocolContext) {}
 func (p *publisher) Init(ctx ProtocolContext) {
-	PublishNotification[tickNotif](ctx, tickNotif{Tick: p.tick})
+	PublishNotification(ctx, tickNotif{Tick: p.tick})
 }
 
 // --- Tests ---

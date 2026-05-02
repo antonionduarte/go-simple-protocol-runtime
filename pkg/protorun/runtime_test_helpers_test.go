@@ -88,8 +88,8 @@ type twoSidedProtocol struct {
 
 func (p *twoSidedProtocol) Start(ctx ProtocolContext) {
 	p.ctx = ctx
-	RegisterCodec[*localMessage](ctx, localCodec{})
-	RegisterHandler[*localMessage](ctx, p.handle)
+	RegisterCodec(ctx, localCodec{})
+	RegisterHandler(ctx, p.handle)
 }
 
 func (p *twoSidedProtocol) Init(ctx ProtocolContext) {

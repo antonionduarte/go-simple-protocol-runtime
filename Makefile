@@ -1,4 +1,4 @@
-.PHONY: build test test-race run \
+.PHONY: build test test-race run bench \
 	lint lint-fix lint-new \
 	modernize modernize-check \
 	coverage vulncheck \
@@ -16,6 +16,9 @@ test:
 
 test-race:
 	go test -race ./...
+
+bench:
+	go test -bench=. -run=^$$ -benchmem ./...
 
 run:
 	go run ./cmd/pingpong \

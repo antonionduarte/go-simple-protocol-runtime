@@ -70,7 +70,8 @@ type Runtime struct {
 	networkLayer transport.Layer
 	sessionLayer *transport.SessionLayer
 
-	logger *slog.Logger
+	logger  *slog.Logger
+	metrics Metrics
 }
 
 // SessionConnectedHandler can be implemented by a protocol that wants to be
@@ -144,6 +145,7 @@ func New(self transport.Host, opts ...Option) *Runtime {
 		requestRoutes:         make(map[uint64]requestRoute),
 		notificationFanout:    make(map[uint64]map[*protoProtocol]func(Notification)),
 		logger:                slog.Default().With("component", "runtime"),
+		metrics:               noopMetrics{},
 	}
 	for _, opt := range opts {
 		opt(r)
@@ -279,10 +281,16 @@ func (r *Runtime) sendRequest(
 	requestID := requester.nextRequestID.Add(1)
 	token := replyToken{requester: requester, requestID: requestID}
 
+	wireIDAttr := Attr{Key: "wireID", Value: fmt.Sprintf("%#x", wireID)}
+	r.metrics.Counter("protorun.ipc.request.sent", 1, wireIDAttr)
+
+	now := time.Now()
 	requester.pendingMu.Lock()
 	requester.pending[requestID] = pendingRequest{
-		cb:       onReply,
-		deadline: time.Now().Add(timeout),
+		cb:        onReply,
+		deadline:  now.Add(timeout),
+		startedAt: now,
+		wireID:    wireID,
 	}
 	requester.pendingMu.Unlock()
 
@@ -337,6 +345,9 @@ func (r *Runtime) unsubscribeNotification(proto *protoProtocol, wireID uint64) {
 // stop fanning out and return — the publisher should not block on
 // subscribers it doesn't know about.
 func (r *Runtime) publishNotification(wireID uint64, n Notification) {
+	wireIDAttr := Attr{Key: "wireID", Value: fmt.Sprintf("%#x", wireID)}
+	r.metrics.Counter("protorun.notification.published", 1, wireIDAttr)
+
 	r.notificationFanoutMu.RLock()
 	subs := r.notificationFanout[wireID]
 	// Snapshot the (proto, handler) pairs so we don't hold the lock
@@ -356,6 +367,7 @@ func (r *Runtime) publishNotification(wireID uint64, n Notification) {
 	for _, p := range pairs {
 		select {
 		case p.proto.notificationEvents <- inboundNotification{n: n, handler: p.fn}:
+			r.metrics.Counter("protorun.notification.delivered", 1, wireIDAttr)
 		case <-r.ctx.Done():
 			return
 		}
@@ -448,19 +460,28 @@ func (r *Runtime) startSessionEvents(ctx context.Context) {
 func (r *Runtime) dispatchSessionEvent(ctx context.Context, ev transport.SessionEvent) bool {
 	switch e := ev.(type) {
 	case *transport.SessionConnected:
+		r.metrics.Counter("protorun.session.connected", 1, Attr{Key: "host", Value: e.Host().String()})
 		r.onSessionUpForRetry(e.Host())
 		return r.fanoutSessionEvent(ctx, sessionEvent{kind: sessionConnectedEvent, host: e.Host()})
 	case *transport.SessionDisconnected:
+		r.metrics.Counter("protorun.session.disconnected", 1, Attr{Key: "host", Value: e.Host().String()})
 		giveUp, attempts := r.onSessionDownForRetry(e.Host())
 		if giveUp {
+			r.metrics.Counter("protorun.session.given_up", 1,
+				Attr{Key: "host", Value: e.Host().String()},
+				Attr{Key: "attempts", Value: attempts})
 			if !r.fanoutSessionEvent(ctx, sessionEvent{kind: sessionGivenUpEvent, host: e.Host(), attempts: attempts}) {
 				return false
 			}
 		}
 		return r.fanoutSessionEvent(ctx, sessionEvent{kind: sessionDisconnectedEvent, host: e.Host()})
 	case *transport.SessionFailed:
+		r.metrics.Counter("protorun.session.failed", 1, Attr{Key: "host", Value: e.Host().String()})
 		giveUp, attempts := r.onSessionDownForRetry(e.Host())
 		if giveUp {
+			r.metrics.Counter("protorun.session.given_up", 1,
+				Attr{Key: "host", Value: e.Host().String()},
+				Attr{Key: "attempts", Value: attempts})
 			return r.fanoutSessionEvent(ctx, sessionEvent{kind: sessionGivenUpEvent, host: e.Host(), attempts: attempts})
 		}
 		// SessionFailed with retry-in-progress is suppressed from fanout —
@@ -500,8 +521,10 @@ func (r *Runtime) processMessage(buffer bytes.Buffer, from transport.Host) {
 			"from", from.String(),
 			"err", err,
 		)
+		r.metrics.Counter("protorun.message.dropped_header", 1)
 		return
 	}
+	wireIDAttr := Attr{Key: "wireID", Value: fmt.Sprintf("%#x", wireID)}
 
 	r.codecLookupMu.RLock()
 	protocol, exists := r.codecLookup[wireID]
@@ -511,6 +534,7 @@ func (r *Runtime) processMessage(buffer bytes.Buffer, from transport.Host) {
 			"from", from.String(),
 			"wireID", fmt.Sprintf("%#x", wireID),
 		)
+		r.metrics.Counter("protorun.message.dropped_unknown_id", 1, wireIDAttr)
 		return
 	}
 
@@ -520,6 +544,7 @@ func (r *Runtime) processMessage(buffer bytes.Buffer, from transport.Host) {
 			"from", from.String(),
 			"wireID", fmt.Sprintf("%#x", wireID),
 		)
+		r.metrics.Counter("protorun.message.dropped_codec_race", 1, wireIDAttr)
 		return
 	}
 
@@ -530,6 +555,7 @@ func (r *Runtime) processMessage(buffer bytes.Buffer, from transport.Host) {
 			"wireID", fmt.Sprintf("%#x", wireID),
 			"err", err,
 		)
+		r.metrics.Counter("protorun.message.dropped_decode_error", 1, wireIDAttr)
 		return
 	}
 
@@ -537,6 +563,7 @@ func (r *Runtime) processMessage(buffer bytes.Buffer, from transport.Host) {
 		"from", from.String(),
 		"wireID", fmt.Sprintf("%#x", wireID),
 	)
+	r.metrics.Counter("protorun.message.dispatched", 1, wireIDAttr)
 	ctx := r.ctx
 	if ctx == nil {
 		ctx = context.Background()

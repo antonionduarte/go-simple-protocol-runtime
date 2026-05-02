@@ -2,6 +2,7 @@ package protorun
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
@@ -377,6 +378,10 @@ func (p *protoProtocol) reportPanic(where string, rec any, stack []byte) {
 	logger := slog.Default()
 	if p.runtime != nil {
 		logger = p.runtime.Logger()
+		p.runtime.metrics.Counter("protorun.handler.panic", 1,
+			Attr{Key: "where", Value: where},
+			Attr{Key: "protocol", Value: fmt.Sprintf("%T", p.protocol)},
+		)
 	}
 	logger.Error("protocol handler panicked",
 		"protocol", fmt.Sprintf("%T", p.protocol),
@@ -408,9 +413,42 @@ func (p *protoProtocol) deliverReply(rep inboundReply) {
 	}
 	p.pendingMu.Unlock()
 	if !ok {
+		// Late arrival — the other branch (timeout vs reply) already
+		// claimed this requestID. Counter so operators can see how
+		// often this happens.
+		if p.runtime != nil {
+			p.runtime.metrics.Counter("protorun.ipc.reply.dropped_late", 1)
+		}
 		return
 	}
+	if p.runtime != nil {
+		wireIDAttr := Attr{Key: "wireID", Value: fmt.Sprintf("%#x", pending.wireID)}
+		resultAttr := Attr{Key: "result", Value: replyResultLabel(rep.err)}
+		p.runtime.metrics.Counter("protorun.ipc.request.completed", 1, wireIDAttr, resultAttr)
+		p.runtime.metrics.Histogram("protorun.ipc.request.latency_ms",
+			float64(time.Since(pending.startedAt).Microseconds())/1000.0,
+			wireIDAttr, resultAttr)
+	}
 	pending.cb(rep.rep, rep.err)
+}
+
+// replyResultLabel maps a reply's error (or nil for success) to the
+// "result" attribute value used in IPC metrics.
+func replyResultLabel(err error) string {
+	switch {
+	case err == nil:
+		return "success"
+	case errors.Is(err, ErrRequestTimeout):
+		return "timeout"
+	case errors.Is(err, ErrNoRequestHandler):
+		return "no_handler"
+	case errors.Is(err, ErrHandlerPanicked):
+		return "handler_panicked"
+	case errors.Is(err, ErrResponderFailed):
+		return "responder_failed"
+	default:
+		return "error"
+	}
 }
 
 // deliverSessionEvent invokes the protocol's optional session-event

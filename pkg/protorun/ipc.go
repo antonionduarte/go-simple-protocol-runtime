@@ -139,8 +139,10 @@ type inboundNotification struct {
 // side. Stored in protoProtocol.pending until either a reply lands or
 // the timeout fires (whichever first).
 type pendingRequest struct {
-	cb       func(Reply, error)
-	deadline time.Time
+	cb        func(Reply, error)
+	deadline  time.Time
+	startedAt time.Time
+	wireID    uint64
 }
 
 // requestRoute tells the runtime which protocol owns a given request

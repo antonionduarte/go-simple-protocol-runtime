@@ -78,7 +78,7 @@ type SessionGivenUpHandler interface {
 // retryState tracks an in-flight retry schedule for one peer.
 type retryState struct {
 	policy  RetryPolicy
-	attempt int        // number of failed attempts so far
+	attempt int         // number of failed attempts so far
 	timer   *time.Timer // the pending backoff timer, if any
 }
 
@@ -192,4 +192,3 @@ func (r *Runtime) retryTeardown() {
 		delete(r.connectionRetries, host)
 	}
 }
-

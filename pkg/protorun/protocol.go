@@ -186,7 +186,6 @@ func (p *protoProtocol) RegisterTimerHandler(timer Timer, handler func(Timer)) {
 
 func (p *protoProtocol) TimerChannel() chan Timer { return p.timerChannel }
 
-
 // ensureContext lazily initializes the ProtocolContext. The protocol must
 // have been registered with a Runtime via registerProtocol or Register
 // before Start or Init is called.
@@ -236,7 +235,7 @@ func (c *protocolContext) RegisterTimerHandler(timer Timer, handler func(Timer))
 	c.proto.timerHandlers[timer.TimerID()] = handler
 }
 
-func (c *protocolContext) Self() transport.Host       { return c.runtime.self }
+func (c *protocolContext) Self() transport.Host { return c.runtime.self }
 func (c *protocolContext) Logger() *slog.Logger { return c.logger }
 
 func (c *protocolContext) registerCodec(wireID uint64, codec codec) {

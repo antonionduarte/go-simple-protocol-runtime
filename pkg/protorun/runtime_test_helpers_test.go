@@ -29,23 +29,23 @@ type MockNetworkLayer struct {
 	SendCalled       bool
 	CancelCalled     bool
 
-	outChannel         chan transport.Message
-	outEvents chan transport.Event
+	outChannel chan transport.Message
+	outEvents  chan transport.Event
 }
 
 func NewMockNetworkLayer() *MockNetworkLayer {
 	return &MockNetworkLayer{
-		outChannel:         make(chan transport.Message, 1),
-		outEvents: make(chan transport.Event, 1),
+		outChannel: make(chan transport.Message, 1),
+		outEvents:  make(chan transport.Event, 1),
 	}
 }
 
-func (m *MockNetworkLayer) Connect(_ transport.Host)                              { m.ConnectCalled = true }
-func (m *MockNetworkLayer) Disconnect(_ transport.Host)                           { m.DisconnectCalled = true }
-func (m *MockNetworkLayer) Send(_ transport.Message, _ transport.Host)         { m.SendCalled = true }
-func (m *MockNetworkLayer) OutChannel() chan transport.Message           { return m.outChannel }
-func (m *MockNetworkLayer) OutEvents() chan transport.Event     { return m.outEvents }
-func (m *MockNetworkLayer) Cancel()                                         { m.CancelCalled = true }
+func (m *MockNetworkLayer) Connect(_ transport.Host)                   { m.ConnectCalled = true }
+func (m *MockNetworkLayer) Disconnect(_ transport.Host)                { m.DisconnectCalled = true }
+func (m *MockNetworkLayer) Send(_ transport.Message, _ transport.Host) { m.SendCalled = true }
+func (m *MockNetworkLayer) OutChannel() chan transport.Message         { return m.outChannel }
+func (m *MockNetworkLayer) OutEvents() chan transport.Event            { return m.outEvents }
+func (m *MockNetworkLayer) Cancel()                                    { m.CancelCalled = true }
 
 // localMessage is the canonical test message: just a sender, no payload.
 // It uses BaseMessage so Sender/SetSender are inherited.
@@ -59,14 +59,14 @@ var _ Message = (*localMessage)(nil)
 // care about message contents, only routing.
 type localCodec struct{}
 
-func (localCodec) Marshal(_ *localMessage) ([]byte, error)      { return nil, nil }
-func (localCodec) Unmarshal(_ []byte) (*localMessage, error)      { return &localMessage{}, nil }
+func (localCodec) Marshal(_ *localMessage) ([]byte, error)   { return nil, nil }
+func (localCodec) Unmarshal(_ []byte) (*localMessage, error) { return &localMessage{}, nil }
 
 // failingCodec returns the supplied error from Encode and Decode. Used to
 // test that the runtime propagates codec errors instead of swallowing them.
 type failingCodec struct{}
 
-func (failingCodec) Marshal(_ *failingMessageBM) ([]byte, error) { return nil, assertError{} }
+func (failingCodec) Marshal(_ *failingMessageBM) ([]byte, error)   { return nil, assertError{} }
 func (failingCodec) Unmarshal(_ []byte) (*failingMessageBM, error) { return nil, assertError{} }
 
 type failingMessageBM struct{ BaseMessage }

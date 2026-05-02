@@ -10,19 +10,18 @@ import (
 	"net"
 	"sync"
 	"time"
-
 )
 
 type (
 	TCPLayer struct {
-		sendChan           chan TCPSendMessage
-		connectChan        chan Host
-		disconnectChan     chan Host
-		outChannel         chan Message
-		outEvents chan Event
-		activeConnections  map[Host]net.Conn
-		mutex              sync.Mutex
-		self               Host
+		sendChan          chan TCPSendMessage
+		connectChan       chan Host
+		disconnectChan    chan Host
+		outChannel        chan Message
+		outEvents         chan Event
+		activeConnections map[Host]net.Conn
+		mutex             sync.Mutex
+		self              Host
 
 		listener   net.Listener
 		cancelFunc context.CancelFunc
@@ -105,22 +104,22 @@ func NewTCPLayer(self Host, ctx context.Context, outBuf int) *TCPLayer {
 	}
 
 	tcpLayer := &TCPLayer{
-		outChannel:         make(chan Message, outBuf),
-		outEvents: make(chan Event, outBuf),
-		activeConnections:  make(map[Host]net.Conn),
-		sendChan:           make(chan TCPSendMessage),
-		connectChan:        make(chan Host),
-		disconnectChan:     make(chan Host),
-		self:               self,
-		ctx:                ctx,
-		cancelFunc:         cancel,
-		logger:             logger,
+		outChannel:        make(chan Message, outBuf),
+		outEvents:         make(chan Event, outBuf),
+		activeConnections: make(map[Host]net.Conn),
+		sendChan:          make(chan TCPSendMessage),
+		connectChan:       make(chan Host),
+		disconnectChan:    make(chan Host),
+		self:              self,
+		ctx:               ctx,
+		cancelFunc:        cancel,
+		logger:            logger,
 	}
 
 	logger.Info("tcp layer starting", "self", self.ToString())
-	tcpLayer.listen()              // start listening
-	go tcpLayer.handler()          // start main event loop
-	go tcpLayer.closeOnCtxDone()   // ensure resources release on ctx cancel
+	tcpLayer.listen()            // start listening
+	go tcpLayer.handler()        // start main event loop
+	go tcpLayer.closeOnCtxDone() // ensure resources release on ctx cancel
 	return tcpLayer
 }
 

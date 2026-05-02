@@ -21,8 +21,8 @@ type retryGiveUp struct {
 	attempts int
 }
 
-func (w *retryWatcher) Start(_ ProtocolContext)      {}
-func (w *retryWatcher) Init(ctx ProtocolContext)     {}
+func (w *retryWatcher) Start(_ ProtocolContext)  {}
+func (w *retryWatcher) Init(ctx ProtocolContext) {}
 func (w *retryWatcher) OnSessionConnected(h transport.Host) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -191,4 +191,3 @@ func TestRuntime_ConnectRetry_DisconnectCancels(t *testing.T) {
 		t.Fatalf("expected no SessionGivenUp after Disconnect, got %+v", watcher.givenUp)
 	}
 }
-

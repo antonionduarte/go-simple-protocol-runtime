@@ -101,10 +101,10 @@ func (t *triggerer) Trigger(payload []byte) {
 
 // node bundles the per-instance handles a test wants to interact with.
 type node struct {
-	rt        *protorun.Runtime
-	trigger   *triggerer
-	watcher   *viewWatcher
-	rec       *recorder
+	rt      *protorun.Runtime
+	trigger *triggerer
+	watcher *viewWatcher
+	rec     *recorder
 }
 
 // startCluster builds nodeCount runtimes on a fresh port range, wires

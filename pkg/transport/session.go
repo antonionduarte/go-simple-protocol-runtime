@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
-
 )
 
 // SessionLayer sits between the runtime and a concrete Layer.
@@ -29,9 +28,9 @@ type (
 		sessions map[Host]*sessionConn
 
 		// transport-level details and host mappings.
-		transport          Layer // Underlying transport layer
-		transportToLogical map[Host]Host  // Map from transport host to logical host
-		logicalToTransport map[Host]Host  // Map from logical host to transport host
+		transport          Layer         // Underlying transport layer
+		transportToLogical map[Host]Host // Map from transport host to logical host
+		logicalToTransport map[Host]Host // Map from logical host to transport host
 
 		ctx        context.Context
 		cancelFunc context.CancelFunc

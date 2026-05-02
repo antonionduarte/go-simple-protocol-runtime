@@ -497,7 +497,7 @@ func (r *Runtime) processMessage(buffer bytes.Buffer, from transport.Host) {
 	var wireID uint64
 	if err := binary.Read(&buffer, binary.LittleEndian, &wireID); err != nil {
 		logger.Error("failed to read wireID header",
-			"from", from.ToString(),
+			"from", from.String(),
 			"err", err,
 		)
 		return
@@ -508,7 +508,7 @@ func (r *Runtime) processMessage(buffer bytes.Buffer, from transport.Host) {
 	r.codecLookupMu.RUnlock()
 	if !exists {
 		logger.Warn("received message for unknown wireID",
-			"from", from.ToString(),
+			"from", from.String(),
 			"wireID", fmt.Sprintf("%#x", wireID),
 		)
 		return
@@ -517,7 +517,7 @@ func (r *Runtime) processMessage(buffer bytes.Buffer, from transport.Host) {
 	c, ok := protocol.codecs[wireID]
 	if !ok {
 		logger.Warn("codec lookup raced",
-			"from", from.ToString(),
+			"from", from.String(),
 			"wireID", fmt.Sprintf("%#x", wireID),
 		)
 		return
@@ -526,7 +526,7 @@ func (r *Runtime) processMessage(buffer bytes.Buffer, from transport.Host) {
 	message, err := c.unmarshal(buffer.Bytes())
 	if err != nil {
 		logger.Error("failed to decode message",
-			"from", from.ToString(),
+			"from", from.String(),
 			"wireID", fmt.Sprintf("%#x", wireID),
 			"err", err,
 		)
@@ -534,7 +534,7 @@ func (r *Runtime) processMessage(buffer bytes.Buffer, from transport.Host) {
 	}
 
 	logger.Debug("dispatching message",
-		"from", from.ToString(),
+		"from", from.String(),
 		"wireID", fmt.Sprintf("%#x", wireID),
 	)
 	ctx := r.ctx
@@ -560,6 +560,25 @@ func WithTCPTransport(ctx context.Context) Option {
 		session := transport.NewSessionLayer(tcp, r.self, ctx, 0, 0)
 		r.networkLayer = tcp
 		r.sessionLayer = session
+	}
+}
+
+// WithTransport injects a pre-constructed transport stack. Use this
+// when you need to plug in a non-TCP transport (UDP, in-memory, mock
+// for tests), tune buffer sizes / timeouts on the existing layers, or
+// otherwise own the construction yourself. Either argument may be nil
+// — the runtime accepts a network layer without a session layer if
+// you wire sessions some other way, and vice versa.
+//
+// For the default TCP setup, prefer WithTCPTransport(ctx).
+func WithTransport(layer transport.Layer, session *transport.SessionLayer) Option {
+	return func(r *Runtime) {
+		if layer != nil {
+			r.networkLayer = layer
+		}
+		if session != nil {
+			r.sessionLayer = session
+		}
 	}
 }
 

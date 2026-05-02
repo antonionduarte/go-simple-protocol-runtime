@@ -62,7 +62,7 @@ func (p *Pinger) OnSessionConnected(_ transport.Host) {
 }
 
 func (p *Pinger) handle(msg *PingMessage, from transport.Host) {
-    p.ctx.Logger().Info("got ping", "from", from.ToString(), "seq", msg.Seq)
+    p.ctx.Logger().Info("got ping", "from", from, "seq", msg.Seq)
     _ = p.ctx.Send(&PingMessage{Seq: msg.Seq + 1}, p.peer)
 }
 

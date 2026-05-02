@@ -31,37 +31,37 @@ func (p *PingPongProtocol) Start(ctx protorun.ProtocolContext) {
 
 func (p *PingPongProtocol) Init(ctx protorun.ProtocolContext) {
 	if err := ctx.Connect(p.peer); err != nil {
-		p.logger.Error("initial Connect failed", "peer", (&p.peer).ToString(), "err", err)
+		p.logger.Error("initial Connect failed", "peer", p.peer.String(), "err", err)
 	}
 }
 
 func (p *PingPongProtocol) OnSessionConnected(h transport.Host) {
-	if !transport.CompareHost(h, p.peer) {
+	if h != p.peer {
 		return
 	}
 	p.seq++
 	p.logger.Info("session established with peer, sending initial Ping",
-		"peer", (&p.peer).ToString(), "seq", p.seq)
+		"peer", p.peer.String(), "seq", p.seq)
 	if err := p.ctx.Send(NewPingMessage(p.seq), p.peer); err != nil {
 		p.logger.Error("failed to send initial Ping", "err", err)
 	}
 }
 
 func (p *PingPongProtocol) OnSessionDisconnected(h transport.Host) {
-	if transport.CompareHost(h, p.peer) {
-		p.logger.Warn("session with peer disconnected", "peer", (&p.peer).ToString())
+	if h == p.peer {
+		p.logger.Warn("session with peer disconnected", "peer", p.peer.String())
 	}
 }
 
 func (p *PingPongProtocol) HandlePing(ping *PingMessage, from transport.Host) {
-	p.logger.Info("Ping received", "from", (&from).ToString(), "seq", ping.Seq)
+	p.logger.Info("Ping received", "from", from.String(), "seq", ping.Seq)
 	if err := p.ctx.Send(NewPongMessage(ping.Seq), p.peer); err != nil {
 		p.logger.Error("failed to send Pong", "err", err)
 	}
 }
 
 func (p *PingPongProtocol) HandlePong(pong *PongMessage, from transport.Host) {
-	p.logger.Info("Pong received", "from", (&from).ToString(), "seq", pong.Seq)
+	p.logger.Info("Pong received", "from", from.String(), "seq", pong.Seq)
 	p.seq++
 	if err := p.ctx.Send(NewPingMessage(p.seq), p.peer); err != nil {
 		p.logger.Error("failed to send Ping", "err", err)

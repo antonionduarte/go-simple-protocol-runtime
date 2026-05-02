@@ -53,10 +53,10 @@ func TestSessionLayerSuccessfulHandshake(t *testing.T) {
 		t.Fatalf("expected SessionConnected on both sides, got %T and %T", ev1, ev2)
 	}
 
-	if !CompareHost(c1.Host(), h2) {
+	if c1.Host() != h2 {
 		t.Fatalf("expected s1 to see peer %v, got %v", h2, c1.Host())
 	}
-	if !CompareHost(c2.Host(), h1) {
+	if c2.Host() != h1 {
 		t.Fatalf("expected s2 to see peer %v, got %v", h1, c2.Host())
 	}
 }
@@ -83,7 +83,7 @@ func TestSessionLayerFailedConnection(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected SessionFailed, got %T", ev)
 	}
-	if !CompareHost(failed.Host(), hNoServer) {
+	if failed.Host() != hNoServer {
 		t.Fatalf("expected failed host %v, got %v", hNoServer, failed.Host())
 	}
 }

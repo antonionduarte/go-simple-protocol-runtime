@@ -19,12 +19,11 @@ func NewHost(port int, ip string) Host {
 	return Host{Port: port, IP: ip}
 }
 
-func (host *Host) ToString() string {
-	return fmt.Sprintf("%s:%d", host.IP, host.Port)
-}
-
-func CompareHost(a, b Host) bool {
-	return a.IP == b.IP && a.Port == b.Port
+// String formats the host as "ip:port". Satisfies fmt.Stringer, so
+// passing a Host as a slog attribute auto-formats correctly without
+// the caller having to wrap it.
+func (h Host) String() string {
+	return fmt.Sprintf("%s:%d", h.IP, h.Port)
 }
 
 // WriteHost writes a Host as [uint16 LE host-len][host bytes][uint16 LE

@@ -58,9 +58,9 @@ func main() {
 		contacts = append(contacts, transport.NewHost(p, *contactIP))
 	}
 
-	logger.Info("gossip node starting", "self", (&self).ToString(), "contacts", len(contacts))
+	logger.Info("gossip node starting", "self", self.String(), "contacts", len(contacts))
 
-	heartbeat := []byte("hello from " + (&self).ToString())
+	heartbeat := []byte("hello from " + self.String())
 	rt := protorun.New(self,
 		protorun.WithLogger(logger),
 		protorun.WithTCPTransport(context.Background()),

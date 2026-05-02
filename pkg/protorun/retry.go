@@ -144,7 +144,7 @@ func (r *Runtime) onSessionDownForRetry(host transport.Host) (giveUp bool, attem
 	}
 	delay := st.policy.nextDelay(st.attempt - 1)
 	r.Logger().Debug("scheduling reconnect",
-		"host", host.ToString(),
+		"host", host.String(),
 		"attempt", st.attempt,
 		"delay", delay,
 	)
@@ -160,7 +160,7 @@ func (r *Runtime) onSessionDownForRetry(host transport.Host) (giveUp bool, attem
 			return
 		}
 		if err := r.connect(host); err != nil {
-			r.Logger().Debug("retry connect failed", "host", host.ToString(), "err", err)
+			r.Logger().Debug("retry connect failed", "host", host.String(), "err", err)
 		}
 	})
 	return false, 0

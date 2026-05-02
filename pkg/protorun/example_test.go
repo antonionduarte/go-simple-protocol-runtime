@@ -55,7 +55,7 @@ func ExampleRegisterHandler() {
 		return
 	}
 	protorun.RegisterHandler(ctx, func(m *myMessage, from transport.Host) {
-		fmt.Printf("got seq=%d from=%s\n", m.Seq, (&from).ToString())
+		fmt.Printf("got seq=%d from=%s\n", m.Seq, from.String())
 	})
 }
 

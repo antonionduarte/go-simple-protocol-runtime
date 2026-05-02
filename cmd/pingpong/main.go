@@ -41,8 +41,8 @@ func main() {
 	peer := transport.NewHost(*peerPort, *peerIP)
 
 	logger.Info("starting pingpong node",
-		"self", (&myself).ToString(),
-		"peer", (&peer).ToString(),
+		"self", myself.String(),
+		"peer", peer.String(),
 	)
 
 	rt := protorun.New(myself,

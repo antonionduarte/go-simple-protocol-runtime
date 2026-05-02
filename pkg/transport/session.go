@@ -152,16 +152,16 @@ func (s *sessionConn) handleClientConnectRequested() {
 	case SessionStateIdle, SessionStateFailed, SessionStateClosing:
 		s.state = SessionStateHandshakingClient
 		s.layer.logger.Debug("session FSM: client connect requested",
-			"logical", s.logicalHost.ToString(),
-			"transport", s.transportHost.ToString())
+			"logical", s.logicalHost.String(),
+			"transport", s.transportHost.String())
 		// Initiate underlying transport connection.
 		s.layer.transport.Connect(s.transportHost)
 	default:
 		// Connect requested in an unexpected state; log and ignore.
 		s.layer.logger.Warn("session FSM: connect requested in non-idle state",
 			"state", s.state,
-			"logical", s.logicalHost.ToString(),
-			"transport", s.transportHost.ToString())
+			"logical", s.logicalHost.String(),
+			"transport", s.transportHost.String())
 	}
 }
 
@@ -173,12 +173,12 @@ func (s *sessionConn) handleConnected() {
 		// Client side: send Hello with our logical host and consider the
 		// session established from the client's perspective.
 		s.layer.logger.Debug("session FSM: transport connected (client), sending Hello and marking established",
-			"logical", s.logicalHost.ToString(),
-			"transport", s.transportHost.ToString())
+			"logical", s.logicalHost.String(),
+			"transport", s.transportHost.String())
 		helloPayload, err := encodeHello(s.layer.self)
 		if err != nil {
 			s.layer.logger.Error("session FSM: encodeHello failed",
-				"transport", s.transportHost.ToString(),
+				"transport", s.transportHost.String(),
 				"err", err)
 			s.lastErr = err
 			s.state = SessionStateFailed
@@ -192,29 +192,29 @@ func (s *sessionConn) handleConnected() {
 		}
 		msg := serializeMessage(sessionMsg)
 		s.layer.logger.Debug("session FSM: client sending Hello on transport",
-			"transport", s.transportHost.ToString())
+			"transport", s.transportHost.String())
 		s.layer.transport.Send(msg, s.transportHost)
 		s.layer.logger.Debug("session FSM: client Hello sent",
-			"transport", s.transportHost.ToString())
+			"transport", s.transportHost.String())
 
 		// Mark as established on the client side and emit SessionConnected.
 		s.state = SessionStateEstablished
 		s.layer.setServerMapping(s.transportHost, s.logicalHost)
 		s.layer.logger.Info("session FSM: client emitting SessionConnected",
-			"peer", s.logicalHost.ToString(),
-			"transport", s.transportHost.ToString())
+			"peer", s.logicalHost.String(),
+			"transport", s.transportHost.String())
 		s.layer.emitEvent(&SessionConnected{host: s.logicalHost})
 
 	case SessionStateHandshakingServer:
 		// Server side: just record that the transport is up; we wait for Hello.
 		s.layer.logger.Debug("session FSM: transport connected (server)",
-			"transport", s.transportHost.ToString())
+			"transport", s.transportHost.String())
 
 	default:
 		// In other states, just log; this likely indicates a reconnect or race.
 		s.layer.logger.Warn("session FSM: transport connected in unexpected state",
 			"state", s.state,
-			"transport", s.transportHost.ToString())
+			"transport", s.transportHost.String())
 	}
 }
 
@@ -226,7 +226,7 @@ func (s *sessionConn) handleHandshakeMessage(msg SessionMessage) {
 	if err != nil {
 		s.lastErr = err
 		s.layer.logger.Error("session FSM: failed to parse handshake payload",
-			"transport", s.transportHost.ToString(),
+			"transport", s.transportHost.String(),
 			"err", err)
 		return
 	}
@@ -240,7 +240,7 @@ func (s *sessionConn) handleHandshakeMessage(msg SessionMessage) {
 		s.layer.logger.Warn("session FSM: handshake message in unexpected state",
 			"state", s.state,
 			"type", ht,
-			"transport", s.transportHost.ToString())
+			"transport", s.transportHost.String())
 	}
 }
 
@@ -250,8 +250,8 @@ func (s *sessionConn) handleServerHandshake(ht HandshakeType, remote Host) {
 		// Server received client's logical host; record mapping and send Ack.
 		s.logicalHost = remote
 		s.layer.logger.Debug("session FSM: server received Hello",
-			"client", remote.ToString(),
-			"transport", s.transportHost.ToString())
+			"client", remote.String(),
+			"transport", s.transportHost.String())
 
 		ackPayload := encodeAck()
 		sessionMsg := SessionMessage{
@@ -261,26 +261,26 @@ func (s *sessionConn) handleServerHandshake(ht HandshakeType, remote Host) {
 		}
 		msg := serializeMessage(sessionMsg)
 		s.layer.logger.Debug("session FSM: server sending Ack on transport",
-			"transport", s.transportHost.ToString())
+			"transport", s.transportHost.String())
 		s.layer.transport.Send(msg, s.transportHost)
 		s.layer.logger.Debug("session FSM: server Ack sent",
-			"transport", s.transportHost.ToString())
+			"transport", s.transportHost.String())
 
 		// Mark as established and emit event.
 		s.state = SessionStateEstablished
 		s.layer.setServerMapping(s.transportHost, s.logicalHost)
 		s.layer.logger.Debug("session FSM: server handshake complete",
-			"client", s.logicalHost.ToString(),
-			"transport", s.transportHost.ToString())
+			"client", s.logicalHost.String(),
+			"transport", s.transportHost.String())
 		s.layer.logger.Info("session FSM: server emitting SessionConnected",
-			"peer", s.logicalHost.ToString(),
-			"transport", s.transportHost.ToString())
+			"peer", s.logicalHost.String(),
+			"transport", s.transportHost.String())
 		s.layer.emitEvent(&SessionConnected{host: s.logicalHost})
 
 	case HandshakeAck:
 		// Server receiving Ack is unexpected.
 		s.layer.logger.Warn("session FSM: server received unexpected Ack",
-			"transport", s.transportHost.ToString())
+			"transport", s.transportHost.String())
 	}
 }
 
@@ -290,13 +290,13 @@ func (s *sessionConn) handleClientHandshake(ht HandshakeType, _ Host) {
 		// Client receiving Ack is optional confirmation; we already treat the
 		// session as established on transport connect. Just log it.
 		s.layer.logger.Debug("session FSM: client received Ack",
-			"server", s.logicalHost.ToString(),
-			"transport", s.transportHost.ToString())
+			"server", s.logicalHost.String(),
+			"transport", s.transportHost.String())
 
 	case HandshakeHello:
 		// Client receiving Hello is unexpected in the current simple protocol.
 		s.layer.logger.Warn("session FSM: client received unexpected Hello",
-			"transport", s.transportHost.ToString())
+			"transport", s.transportHost.String())
 	}
 }
 
@@ -304,8 +304,8 @@ func (s *sessionConn) handleClientHandshake(ht HandshakeType, _ Host) {
 func (s *sessionConn) handleDisconnected() {
 	s.layer.logger.Debug("session FSM: transport disconnected",
 		"state", s.state,
-		"logical", s.logicalHost.ToString(),
-		"transport", s.transportHost.ToString())
+		"logical", s.logicalHost.String(),
+		"transport", s.transportHost.String())
 
 	switch s.state {
 	case SessionStateEstablished, SessionStateHandshakingClient, SessionStateHandshakingServer:
@@ -313,8 +313,8 @@ func (s *sessionConn) handleDisconnected() {
 		logical := s.layer.mapToHost(s.transportHost)
 		s.layer.cleanupServerMapping(s.transportHost)
 		s.layer.logger.Info("session FSM: emitting SessionDisconnected",
-			"peer", logical.ToString(),
-			"transport", s.transportHost.ToString())
+			"peer", logical.String(),
+			"transport", s.transportHost.String())
 		s.layer.emitEvent(&SessionDisconnected{host: logical})
 	default:
 		// In other states, simply mark as failed.
@@ -326,15 +326,15 @@ func (s *sessionConn) handleDisconnected() {
 func (s *sessionConn) handleFailed() {
 	s.layer.logger.Warn("session FSM: transport failed",
 		"state", s.state,
-		"logical", s.logicalHost.ToString(),
-		"transport", s.transportHost.ToString())
+		"logical", s.logicalHost.String(),
+		"transport", s.transportHost.String())
 
 	logical := s.layer.mapToHost(s.transportHost)
 	s.layer.cleanupServerMapping(s.transportHost)
 	s.state = SessionStateFailed
 	s.layer.logger.Info("session FSM: emitting SessionFailed",
-		"peer", logical.ToString(),
-		"transport", s.transportHost.ToString())
+		"peer", logical.String(),
+		"transport", s.transportHost.String())
 	s.layer.emitEvent(&SessionFailed{host: logical})
 }
 
@@ -410,7 +410,7 @@ func (s *SessionLayer) emitEvent(ev SessionEvent) {
 }
 
 func (s *SessionLayer) Connect(host Host) {
-	s.logger.Debug("session connect requested", "host", host.ToString())
+	s.logger.Debug("session connect requested", "host", host.String())
 	select {
 	case s.connectChan <- host:
 	case <-s.ctx.Done():
@@ -418,7 +418,7 @@ func (s *SessionLayer) Connect(host Host) {
 }
 
 func (s *SessionLayer) Disconnect(host Host) {
-	s.logger.Debug("session disconnect requested", "host", host.ToString())
+	s.logger.Debug("session disconnect requested", "host", host.String())
 	select {
 	case s.disconnectChan <- host:
 	case <-s.ctx.Done():
@@ -426,7 +426,7 @@ func (s *SessionLayer) Disconnect(host Host) {
 }
 
 func (s *SessionLayer) Send(msg bytes.Buffer, sendTo Host) {
-	s.logger.Debug("session send requested", "to", sendTo.ToString(), "bytes", msg.Len())
+	s.logger.Debug("session send requested", "to", sendTo.String(), "bytes", msg.Len())
 	select {
 	case s.sendChan <- SessionMessage{Msg: msg, host: sendTo, layer: Application}:
 	case <-s.ctx.Done():
@@ -475,7 +475,7 @@ func (s *SessionLayer) transportMessageHandler(msg Message) {
 	switch sessionMsg.layer {
 	case Application:
 		s.logger.Debug("session application message received",
-			"from", sessionMsg.host.ToString(),
+			"from", sessionMsg.host.String(),
 			"bytes", sessionMsg.Msg.Len())
 		select {
 		case s.outMessages <- sessionMsg:
@@ -483,12 +483,12 @@ func (s *SessionLayer) transportMessageHandler(msg Message) {
 		}
 
 	case Session:
-		s.logger.Debug("session handshake message received", "from", msg.Host.ToString(), "bytes", sessionMsg.Msg.Len())
+		s.logger.Debug("session handshake message received", "from", msg.Host.String(), "bytes", sessionMsg.Msg.Len())
 		s.dispatchHandshakeMessage(msg.Host, sessionMsg)
 
 	default:
 		s.logger.Warn("session message with unknown layer identifier dropped",
-			"from", msg.Host.ToString(),
+			"from", msg.Host.String(),
 			"layer", sessionMsg.layer,
 			"bytes", sessionMsg.Msg.Len(),
 		)
@@ -498,7 +498,7 @@ func (s *SessionLayer) transportMessageHandler(msg Message) {
 func (s *SessionLayer) transportEventHandler(event Event) {
 	switch e := event.(type) {
 	case *Connected:
-		s.logger.Info("session inbound transport connected", "host", e.host.ToString())
+		s.logger.Info("session inbound transport connected", "host", e.host.String())
 		s.dispatchConnected(e.host)
 
 	case *Disconnected:
@@ -510,7 +510,7 @@ func (s *SessionLayer) transportEventHandler(event Event) {
 }
 
 func (s *SessionLayer) connectClient(h Host) {
-	s.logger.Info("session initiating client handshake", "to", h.ToString())
+	s.logger.Info("session initiating client handshake", "to", h.String())
 	s.withSession(h, h, func(sc *sessionConn) {
 		sc.handleClientConnectRequested()
 	})

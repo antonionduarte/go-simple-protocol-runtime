@@ -24,7 +24,7 @@ func TestSerializeDeserializeMessage_RoundTrip(t *testing.T) {
 	if decodedApp.layer != Application {
 		t.Fatalf("expected Application layer, got %v", decodedApp.layer)
 	}
-	if !CompareHost(decodedApp.host, host) {
+	if decodedApp.host != host {
 		t.Fatalf("expected host %v, got %v", host, decodedApp.host)
 	}
 	if !bytes.Equal(decodedApp.Msg.Bytes(), appPayload.Bytes()) {
@@ -47,7 +47,7 @@ func TestSerializeDeserializeMessage_RoundTrip(t *testing.T) {
 	if decodedSess.layer != Session {
 		t.Fatalf("expected Session layer, got %v", decodedSess.layer)
 	}
-	if !CompareHost(decodedSess.host, host) {
+	if decodedSess.host != host {
 		t.Fatalf("expected host %v, got %v", host, decodedSess.host)
 	}
 

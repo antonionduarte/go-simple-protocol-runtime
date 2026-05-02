@@ -64,7 +64,7 @@ func (p *Protocol) Start(ctx protorun.ProtocolContext) {
 func (p *Protocol) Init(ctx protorun.ProtocolContext) {
 	for _, c := range p.contacts {
 		if err := ctx.ConnectWithRetry(c); err != nil {
-			ctx.Logger().Error("ConnectWithRetry failed", "contact", (&c).ToString(), "err", err)
+			ctx.Logger().Error("ConnectWithRetry failed", "contact", c.String(), "err", err)
 		}
 	}
 }

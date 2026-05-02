@@ -54,7 +54,7 @@ func (r *Runtime) sendMessage(msg Message, sendTo transport.Host) error {
 	if err != nil {
 		logger.Error("failed to encode message",
 			"type", fmt.Sprintf("%T", msg),
-			"to", sendTo.ToString(),
+			"to", sendTo.String(),
 			"err", err,
 		)
 		return err
@@ -64,7 +64,7 @@ func (r *Runtime) sendMessage(msg Message, sendTo transport.Host) error {
 	if err := binary.Write(&buffer, binary.LittleEndian, wireID); err != nil {
 		logger.Error("failed to write wireID header",
 			"type", fmt.Sprintf("%T", msg),
-			"to", sendTo.ToString(),
+			"to", sendTo.String(),
 			"err", err,
 		)
 		return err

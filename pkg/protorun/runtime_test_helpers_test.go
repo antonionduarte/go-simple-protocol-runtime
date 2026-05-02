@@ -98,7 +98,7 @@ func (p *twoSidedProtocol) Init(ctx ProtocolContext) {
 }
 
 func (p *twoSidedProtocol) OnSessionConnected(h transport.Host) {
-	if !transport.CompareHost(h, p.Peer) || p.ctx == nil {
+	if h != p.Peer || p.ctx == nil {
 		return
 	}
 	_ = p.ctx.Send(&localMessage{}, p.Peer)

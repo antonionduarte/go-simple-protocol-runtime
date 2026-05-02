@@ -116,7 +116,7 @@ func NewTCPLayer(self Host, ctx context.Context, outBuf int) *TCPLayer {
 		logger:            logger,
 	}
 
-	logger.Info("tcp layer starting", "self", self.ToString())
+	logger.Info("tcp layer starting", "self", self.String())
 	tcpLayer.listen()            // start listening
 	go tcpLayer.handler()        // start main event loop
 	go tcpLayer.closeOnCtxDone() // ensure resources release on ctx cancel
@@ -124,7 +124,7 @@ func NewTCPLayer(self Host, ctx context.Context, outBuf int) *TCPLayer {
 }
 
 func (t *TCPLayer) Send(msg Message, sendTo Host) {
-	t.logger.Debug("tcp send requested", "to", sendTo.ToString(), "bytes", msg.Msg.Len())
+	t.logger.Debug("tcp send requested", "to", sendTo.String(), "bytes", msg.Msg.Len())
 	select {
 	case t.sendChan <- TCPSendMessage{sendTo, msg}:
 	case <-t.ctx.Done():
@@ -132,7 +132,7 @@ func (t *TCPLayer) Send(msg Message, sendTo Host) {
 }
 
 func (t *TCPLayer) Connect(host Host) {
-	t.logger.Debug("tcp connect requested", "to", host.ToString())
+	t.logger.Debug("tcp connect requested", "to", host.String())
 	select {
 	case t.connectChan <- host:
 	case <-t.ctx.Done():
@@ -140,7 +140,7 @@ func (t *TCPLayer) Connect(host Host) {
 }
 
 func (t *TCPLayer) Disconnect(host Host) {
-	t.logger.Debug("tcp disconnect requested", "host", host.ToString())
+	t.logger.Debug("tcp disconnect requested", "host", host.String())
 	select {
 	case t.disconnectChan <- host:
 	case <-t.ctx.Done():
@@ -186,7 +186,7 @@ func (t *TCPLayer) send(networkMessage Message, sendTo Host) {
 	}
 	frame, err := encodeFrame(networkMessage.Msg.Bytes())
 	if err != nil {
-		t.logger.Error("tcp encode frame failed", "host", sendTo.ToString(), "err", err)
+		t.logger.Error("tcp encode frame failed", "host", sendTo.String(), "err", err)
 		t.outEvents <- &Failed{host: sendTo}
 		// Call the internal disconnect directly: invoking the public
 		// Disconnect would try to push onto disconnectChan, which is drained
@@ -215,13 +215,13 @@ func (t *TCPLayer) disconnect(host Host) {
 }
 
 func (t *TCPLayer) connect(host Host) {
-	conn, err := net.Dial("tcp", (&host).ToString())
+	conn, err := net.Dial("tcp", host.String())
 	if err != nil {
-		t.logger.Error("tcp connect failed", "host", host.ToString(), "err", err)
+		t.logger.Error("tcp connect failed", "host", host.String(), "err", err)
 		t.outEvents <- &Failed{host: host}
 		return
 	}
-	t.logger.Info("tcp connect established", "host", host.ToString())
+	t.logger.Info("tcp connect established", "host", host.String())
 	t.addActiveConn(conn, host)
 	t.outEvents <- &Connected{host: host}
 
@@ -244,13 +244,13 @@ func (t *TCPLayer) handler() {
 }
 
 func (t *TCPLayer) listen() {
-	ln, err := net.Listen("tcp", t.self.ToString())
+	ln, err := net.Listen("tcp", t.self.String())
 	if err != nil {
-		t.logger.Error("tcp listen failed", "self", t.self.ToString(), "err", err)
+		t.logger.Error("tcp listen failed", "self", t.self.String(), "err", err)
 		return
 	}
 	t.listener = ln
-	t.logger.Info("tcp listening", "self", t.self.ToString())
+	t.logger.Info("tcp listening", "self", t.self.String())
 	go t.listenerHandler(ln)
 }
 
@@ -277,7 +277,7 @@ func (t *TCPLayer) listenerHandler(listener net.Listener) {
 		remote := conn.RemoteAddr().(*net.TCPAddr)
 		host := NewHost(remote.Port, remote.IP.String())
 
-		t.logger.Info("tcp inbound connection accepted", "remote", host.ToString())
+		t.logger.Info("tcp inbound connection accepted", "remote", host.String())
 
 		t.addActiveConn(conn, host)
 		t.outEvents <- &Connected{host: host}
@@ -326,7 +326,7 @@ func (t *TCPLayer) readFrames(conn net.Conn, readBuf []byte, recvBuf *bytes.Buff
 		if errors.As(err, &ne) && ne.Timeout() {
 			return nil, nil
 		}
-		t.logger.Error("tcp read error, disconnecting", "host", host.ToString(), "err", err)
+		t.logger.Error("tcp read error, disconnecting", "host", host.String(), "err", err)
 		return nil, err
 	}
 	if n == 0 {
@@ -334,13 +334,13 @@ func (t *TCPLayer) readFrames(conn net.Conn, readBuf []byte, recvBuf *bytes.Buff
 	}
 
 	if _, werr := recvBuf.Write(readBuf[:n]); werr != nil {
-		t.logger.Error("tcp recv buffer write failed", "host", host.ToString(), "err", werr)
+		t.logger.Error("tcp recv buffer write failed", "host", host.String(), "err", werr)
 		return nil, werr
 	}
 
 	frames, derr := decodeFrames(recvBuf)
 	if derr != nil {
-		t.logger.Error("tcp frame decode failed, disconnecting", "host", host.ToString(), "err", derr)
+		t.logger.Error("tcp frame decode failed, disconnecting", "host", host.String(), "err", derr)
 		t.outEvents <- &Failed{host: host}
 		return nil, derr
 	}

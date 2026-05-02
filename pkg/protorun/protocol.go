@@ -202,7 +202,7 @@ func (p *protoProtocol) ensureContext() {
 		runtime: p.runtime,
 		logger: baseLogger.With(
 			"component", "protocol",
-			"self", p.runtime.self.ToString(),
+			"self", p.runtime.self.String(),
 		),
 	}
 }

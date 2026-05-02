@@ -165,7 +165,7 @@ func (p *Protocol) handleViewChanged(ev membership.ViewChanged) {
 func (p *Protocol) fanout(msg *Message, peers []transport.Host) {
 	for _, peer := range peers {
 		if err := p.ctx.Send(msg, peer); err != nil {
-			p.ctx.Logger().Warn("gossip send failed", "peer", (&peer).ToString(), "err", err)
+			p.ctx.Logger().Warn("gossip send failed", "peer", peer.String(), "err", err)
 		}
 	}
 }
@@ -173,7 +173,7 @@ func (p *Protocol) fanout(msg *Message, peers []transport.Host) {
 func excluding(peers []transport.Host, exclude transport.Host) []transport.Host {
 	out := make([]transport.Host, 0, len(peers))
 	for _, h := range peers {
-		if !transport.CompareHost(h, exclude) {
+		if h != exclude {
 			out = append(out, h)
 		}
 	}
@@ -181,5 +181,5 @@ func excluding(peers []transport.Host, exclude transport.Host) []transport.Host 
 }
 
 func sameHost(target transport.Host) func(transport.Host) bool {
-	return func(h transport.Host) bool { return transport.CompareHost(h, target) }
+	return func(h transport.Host) bool { return h == target }
 }

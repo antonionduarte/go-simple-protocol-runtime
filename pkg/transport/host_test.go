@@ -28,7 +28,7 @@ func TestHost_String(t *testing.T) {
 }
 
 // TestHost_StringerInterface verifies Host implements fmt.Stringer at
-// compile time — slog formatting and many fmt.Sprintf calls depend on
+// compile time; slog formatting and many fmt.Sprintf calls depend on
 // this.
 func TestHost_StringerInterface(t *testing.T) {
 	var _ fmt.Stringer = Host{}

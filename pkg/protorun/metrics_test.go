@@ -70,7 +70,7 @@ func (m *recordingMetrics) histogramSamples(name string) int {
 
 // TestMetrics_NoopDefault verifies the framework runs cleanly with
 // no WithMetrics option supplied. The default noopMetrics drops
-// everything — proves no nil-deref, no init-order issue.
+// everything. Proves no nil-deref, no init-order issue.
 func TestMetrics_NoopDefault(t *testing.T) {
 	self := transport.NewHost(0, "127.0.0.1")
 	rt := New(self)

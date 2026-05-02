@@ -6,9 +6,9 @@ import (
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/transport"
 )
 
-// MockProtocol is a stub Protocol used in tests. It does no work itself —
-// tests mostly care that Start/Init were called and that the protocol can
-// be wrapped, registered, and torn down through the runtime APIs.
+// MockProtocol is a stub Protocol used in tests. It does no work itself;
+// tests mostly care that Start/Init were called and that the protocol
+// can be wrapped, registered, and torn down through the runtime APIs.
 type MockProtocol struct {
 	StartCalled bool
 	InitCalled  bool

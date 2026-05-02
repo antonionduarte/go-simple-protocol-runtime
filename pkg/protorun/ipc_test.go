@@ -100,7 +100,7 @@ func (echoServer) Start(ctx ProtocolContext) {
 func (echoServer) Init(_ ProtocolContext) {}
 
 // asyncEchoServer captures the responder and replies on a background
-// goroutine — exercises the async shape.
+// goroutine, exercising the async shape.
 type asyncEchoServer struct{}
 
 func (asyncEchoServer) Start(ctx ProtocolContext) {
@@ -114,7 +114,7 @@ func (asyncEchoServer) Start(ctx ProtocolContext) {
 func (asyncEchoServer) Init(_ ProtocolContext) {}
 
 // silentServer registers a handler that captures the responder and
-// never replies — used by the timeout test.
+// never replies. Used by the timeout test.
 type silentServer struct {
 	captured chan Responder[*echoRep]
 }
@@ -416,7 +416,7 @@ func TestIPC_Notification_Unsubscribe(t *testing.T) {
 	select {
 	case <-sub.gotOne:
 	case <-time.After(2 * time.Second):
-		t.Fatalf("subscriber never got the publish — wiring broken before assertion is meaningful")
+		t.Fatalf("subscriber never got the publish; wiring broken before assertion is meaningful")
 	}
 
 	// Give the runtime a moment in case u was about to receive (it shouldn't).

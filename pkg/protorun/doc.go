@@ -17,7 +17,7 @@
 //
 // # Defining a protocol
 //
-// Implement two methods — Start (register handlers/codecs) and Init
+// Implement two methods, Start (register handlers/codecs) and Init
 // (perform initial work, e.g. dial peers). Optional interfaces let
 // the protocol observe session lifecycle:
 //
@@ -37,9 +37,9 @@
 // The framework derives each message's wire identifier by hashing the
 // Go type name (or M.WireName() if the type implements WireNamer).
 // Production protocols SHOULD implement WireName on every message
-// type — relying on the Go type name silently breaks wire compatibility
-// when the type is renamed or moves between packages, with no
-// compile-time signal. See WireID for details.
+// type. Relying on the Go type name silently breaks wire
+// compatibility when the type is renamed or moves between packages,
+// with no compile-time signal. See WireID for details.
 //
 // # See also
 //

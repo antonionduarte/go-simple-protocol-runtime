@@ -1,11 +1,11 @@
 # protorun
 
 A small framework for building distributed protocols in Go, inspired by
-[Babel](https://github.com/pfouto/babel-core) (the Java protocol-composition
-framework). Protocols are written as Go types implementing `Start(ctx)` and
-`Init(ctx)`; the runtime handles event-loop concurrency, session establishment
+[Babel](https://github.com/pfouto/babel-core), the Java protocol-composition
+framework. Protocols are written as Go types implementing `Start(ctx)` and
+`Init(ctx)`. The runtime handles event-loop concurrency, session establishment
 over TCP, type-safe message dispatch, retries, panic recovery, and
-inter-protocol coordination via Request/Reply + Notifications.
+inter-protocol coordination via Request/Reply and Notifications.
 
 > **Status:** pre-v1. The public API is settling but breaking changes are
 > still on the table. See [`TODO.md`](TODO.md) for what's planned next.
@@ -85,39 +85,39 @@ start exchanging messages.
 A complete two-binary version of this example lives at
 [`cmd/pingpong/`](cmd/pingpong/). For a multi-layer example exercising IPC,
 session events, and a 10-node integration test, see
-[`cmd/gossip/`](cmd/gossip/) — a membership protocol stacked under an
+[`cmd/gossip/`](cmd/gossip/): a membership protocol stacked under an
 eager-push gossip protocol.
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────┐
-│             Your protocols (Protocol)                │
-│  • Start(ctx) registers handlers                     │
-│  • Init(ctx) bootstraps connections, timers          │
-│  • Each gets its own goroutine event loop            │
-└─────────────────┬─────────────┬──────────────────────┘
-                  │             │
-                  │ messages    │ IPC
-                  │             │
-┌─────────────────▼─────────────▼──────────────────────┐
-│ Runtime                                              │
-│  • Codec registry (wireID → owning protocol)         │
-│  • IPC router (request handlers, notif fanout)       │
-│  • Timer table, retry table                          │
-│  • Per-component slog logger                         │
-└─────────────────┬────────────────────────────────────┘
-                  │
-┌─────────────────▼────────────────────────────────────┐
-│ SessionLayer                                         │
-│  • Hello/Ack handshake binds connections to Hosts    │
-│  • Emits SessionConnected / Disconnected / Failed    │
-└─────────────────┬────────────────────────────────────┘
-                  │
-┌─────────────────▼────────────────────────────────────┐
-│ TransportLayer (TCP today; pluggable interface)      │
-│  • length-prefixed framing                           │
-└──────────────────────────────────────────────────────┘
++------------------------------------------------------+
+|             Your protocols (Protocol)                |
+|  - Start(ctx) registers handlers                     |
+|  - Init(ctx) bootstraps connections, timers          |
+|  - Each gets its own goroutine event loop            |
++-----------------+-------------+----------------------+
+                  |             |
+                  | messages    | IPC
+                  |             |
++-----------------v-------------v----------------------+
+| Runtime                                              |
+|  - Codec registry (wireID -> owning protocol)        |
+|  - IPC router (request handlers, notif fanout)       |
+|  - Timer table, retry table                          |
+|  - Per-component slog logger                         |
++-----------------+------------------------------------+
+                  |
++-----------------v------------------------------------+
+| SessionLayer                                         |
+|  - Hello/Ack handshake binds connections to Hosts    |
+|  - Emits SessionConnected / Disconnected / Failed    |
++-----------------+------------------------------------+
+                  |
++-----------------v------------------------------------+
+| TransportLayer (TCP today; pluggable interface)      |
+|  - length-prefixed framing                           |
++------------------------------------------------------+
 ```
 
 ## Concepts
@@ -126,9 +126,9 @@ eager-push gossip protocol.
 
 A `Protocol` is any Go type with `Start(ProtocolContext)` and
 `Init(ProtocolContext)`. The runtime calls every protocol's `Start` first
-(registration phase), then every protocol's `Init` (activation phase) — so
-when one protocol's `Init` fires off a request, the target's handler is
-already registered.
+(registration phase), then every protocol's `Init` (activation phase). When
+one protocol's `Init` fires off a request, the target's handler is already
+registered.
 
 Optional interfaces a protocol can also implement:
 
@@ -175,12 +175,12 @@ Each protocol gets one goroutine that pulls events off its mailbox and
 dispatches them sequentially. Handlers can mutate protocol state without
 locking, as long as access stays inside the handlers.
 
-Public methods you expose on your protocol (e.g. an `enqueue(...)` method
-called from another protocol's goroutine or the application's main loop)
-are *not* on the event loop — for those, route work back onto the event
-loop via IPC (a self-targeted `SendRequest` is the idiomatic pattern). The
-gossip example does this: `gossip.TriggerBroadcast` is the public way to
-ask the gossip protocol to broadcast.
+Public methods you expose on your protocol (for example an `enqueue(...)`
+method called from another protocol's goroutine or the application's main
+loop) are *not* on the event loop. For those, route work back onto the
+event loop via IPC; a self-targeted `SendRequest` is the idiomatic pattern.
+The gossip example does this: `gossip.TriggerBroadcast` is the public way
+to ask the gossip protocol to broadcast.
 
 ## Documentation
 
@@ -210,10 +210,10 @@ make hooks-install
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md). The short version: protocols
-should only interact with the runtime via `ProtocolContext`; cross-protocol
+only interact with the runtime via `ProtocolContext`; cross-protocol
 coordination is IPC, never direct method calls; new tests use goleak +
 `-race`; lint must pass with zero issues.
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+MIT. See [`LICENSE`](LICENSE).

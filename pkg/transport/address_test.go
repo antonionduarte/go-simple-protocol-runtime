@@ -33,8 +33,8 @@ func (f fakeAddr) Equal(other Address) bool {
 }
 
 // TestAddress_CustomImpl verifies a hand-written Address type works
-// the same way Host does — string-formatting and equality both
-// route through the interface.
+// the same way Host does: string-formatting and equality both route
+// through the interface.
 func TestAddress_CustomImpl(t *testing.T) {
 	var a Address = fakeAddr{id: "alpha"}
 	if got := a.String(); got != "fake://alpha" {
@@ -49,7 +49,7 @@ func TestAddress_CustomImpl(t *testing.T) {
 }
 
 // TestAddress_CrossTypeMismatch verifies Equal across different
-// concrete Address types reports unequal — Host should never claim
+// concrete Address types reports unequal: Host should never claim
 // equality with a fakeAddr regardless of whether their String()
 // outputs collide.
 func TestAddress_CrossTypeMismatch(t *testing.T) {
@@ -65,7 +65,7 @@ func TestAddress_CrossTypeMismatch(t *testing.T) {
 }
 
 // TestAddress_NilOther verifies Equal handles a nil Address argument
-// without panicking — a reasonable contract for an interface method
+// without panicking, a reasonable contract for an interface method
 // that may be invoked from generic plumbing.
 func TestAddress_NilOther(t *testing.T) {
 	var nilAddr Address

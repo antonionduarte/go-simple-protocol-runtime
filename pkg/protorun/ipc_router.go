@@ -8,7 +8,7 @@ import "sync"
 // changed" pattern).
 //
 // Read on every SendRequest and PublishNotification; write at
-// registration / subscription time — sync.RWMutex on the request
+// registration / subscription time. sync.RWMutex on the request
 // side, sync.RWMutex on the notification side.
 type ipcRouter struct {
 	requestMu          sync.RWMutex
@@ -92,7 +92,7 @@ func (r *ipcRouter) SnapshotSubscribers(wireID uint64) []notificationSub {
 }
 
 // notificationSub is a flat (proto, handler) pair returned by
-// SnapshotSubscribers — kept tiny so the fanout snapshot doesn't
+// SnapshotSubscribers. Kept tiny so the fanout snapshot doesn't
 // allocate a map on every Publish.
 type notificationSub struct {
 	proto *protoProtocol

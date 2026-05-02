@@ -12,8 +12,8 @@ import (
 var ErrShutdownTimeout = errors.New("protorun: shutdown timeout")
 
 // Shutdown is the bounded-wait alternative to Cancel. It triggers
-// the same teardown as Cancel — context cancellation, transport /
-// session layer Cancel, timer cleanup, retry-table teardown — but
+// the same teardown as Cancel (context cancellation, transport /
+// session layer Cancel, timer cleanup, retry-table teardown), but
 // returns ErrShutdownTimeout if the WaitGroup that tracks every
 // runtime goroutine has not drained within the supplied timeout.
 //
@@ -24,7 +24,7 @@ var ErrShutdownTimeout = errors.New("protorun: shutdown timeout")
 //
 // A non-positive timeout falls back to defaultShutdownTimeout. Once
 // Shutdown is invoked, calling it again or calling Cancel is a
-// no-op — the underlying ctx is already cancelled.
+// no-op; the underlying ctx is already cancelled.
 func (r *Runtime) Shutdown(timeout time.Duration) error {
 	if timeout <= 0 {
 		timeout = defaultShutdownTimeout

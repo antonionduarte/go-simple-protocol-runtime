@@ -6,7 +6,7 @@ import (
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/protorun"
 )
 
-// Pingpong now uses protorun.BinaryCodec for its messages — BaseMessage is
+// Pingpong uses protorun.BinaryCodec for its messages. BaseMessage is
 // a zero-byte marker, so encoding/binary can size the structs and the
 // codec works with no manual encode/decode logic.
 

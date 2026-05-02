@@ -22,7 +22,7 @@ import (
 // payload has been queued for fanout.
 //
 // Optionally, EnablePeriodic configures the protocol to broadcast a
-// caller-supplied payload at a fixed interval — handy for heartbeats
+// caller-supplied payload at a fixed interval, handy for heartbeats
 // or demo programs.
 type Protocol struct {
 	ctx       protorun.ProtocolContext
@@ -36,7 +36,7 @@ type Protocol struct {
 }
 
 // New returns a Protocol that calls onDeliver(payload) exactly once
-// per unique payload it observes — including on the originator when
+// per unique payload it observes, including on the originator when
 // Broadcast is called locally.
 func New(onDeliver func([]byte)) *Protocol {
 	return &Protocol{
@@ -52,7 +52,7 @@ func New(onDeliver func([]byte)) *Protocol {
 // onto New. Must be invoked before Register.
 //
 // payload runs on the protocol's event loop, so it can read protocol-
-// scoped state without locking — but it must not block.
+// scoped state without locking, but it must not block.
 func (p *Protocol) EnablePeriodic(interval time.Duration, payload func() []byte) *Protocol {
 	if interval <= 0 || payload == nil {
 		return p
@@ -122,8 +122,8 @@ func (p *Protocol) handlePeriodicTick(_ protorun.Timer) {
 // handlePeriodicTick (the optional timer entry).
 func (p *Protocol) disseminate(payload []byte) {
 	// Math/rand/v2 is fine here: a 64-bit value is collision-free in
-	// practice and we don't care about adversarial collisions —
-	// gossip IDs are not authenticated.
+	// practice and we don't care about adversarial collisions; gossip
+	// IDs are not authenticated.
 	id := rand.Uint64() //nolint:gosec // see comment
 	p.seen[id] = struct{}{}
 	p.onDeliver(payload)
@@ -159,9 +159,9 @@ func (p *Protocol) handleViewChanged(ev membership.ViewChanged) {
 }
 
 // fanout sends msg to each peer. Errors are logged and otherwise
-// ignored — gossip is best-effort, and the runtime already emits
-// SessionFailed events that membership will translate into a view
-// shrink, which heals subsequent broadcasts.
+// ignored. Gossip is best-effort, and the runtime already emits
+// SessionFailed events that membership translates into a view shrink,
+// which heals subsequent broadcasts.
 func (p *Protocol) fanout(msg *Message, peers []transport.Host) {
 	for _, peer := range peers {
 		if err := p.ctx.Send(msg, peer); err != nil {

@@ -53,7 +53,7 @@ func (p RetryPolicy) nextDelay(attempt int) time.Duration {
 	}
 	if p.Jitter > 0 {
 		// symmetric jitter: [d * (1 - j/2), d * (1 + j/2)].
-		// math/rand/v2 is appropriate here — this is reconnect timing,
+		// math/rand/v2 is appropriate here: this is reconnect timing,
 		// not security-sensitive randomness.
 		j := p.Jitter
 		factor := 1 - j/2 + rand.Float64()*j //nolint:gosec // jitter is timing variation, not crypto
@@ -121,7 +121,7 @@ func (r *Runtime) onSessionUpForRetry(host transport.Host) bool {
 // this event (when a retry is scheduled, protocols don't need to see
 // every transient SessionFailed).
 //
-// The current implementation does NOT suppress fanout — it simply
+// The current implementation does NOT suppress fanout: it simply
 // schedules a retry alongside whatever protocols receive. Returning
 // false keeps fanout enabled.
 func (r *Runtime) onSessionDownForRetry(host transport.Host) (giveUp bool, attempts int) {

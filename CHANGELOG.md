@@ -7,7 +7,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 The framework is pre-1.0; minor versions may break API. Wire format
 is versioned via the session-layer handshake (`transport.ProtocolVersion`).
 
-## v0.1.0 — 2026-05-02
+## v0.1.0, 2026-05-02
 
 First tagged release. Established the protocol-runtime core, IPC
 plane, recovery semantics, observability hooks, and a runnable
@@ -36,7 +36,7 @@ multi-layer example (membership + eager-push gossip with a
 - **Inter-protocol communication (IPC).** Same-runtime Request/Reply
   via `RegisterRequestHandler[Req,Rep]` + `SendRequest`, and fan-out
   Notifications via `SubscribeNotification[N]` /
-  `PublishNotification[N]`. Local-only by design — cross-node
+  `PublishNotification[N]`. Local-only by design; cross-node
   coordination still flows through the peer-message path.
 - **Panic recovery.** Every handler dispatch runs under a `recover`
   so a single bad protocol can't take down its event loop. Optional
@@ -66,8 +66,8 @@ multi-layer example (membership + eager-push gossip with a
   Future non-TCP transports plug in here. The Layer migration to
   take Address everywhere is deferred (see TODO.md).
 - **Custom transport injection.** `WithTransport(layer, session)`
-  closes the IoC seam — pre-built transport stacks plug in via
-  the public Option, no internal access required.
+  closes the IoC seam: pre-built transport stacks plug in via the
+  public Option, no internal access required.
 - **Examples.** `cmd/pingpong` (canonical two-node) and `cmd/gossip`
   (membership + eager-push gossip with a 10-node integration test
   and 100/1000-node scale probes). 10-node test stable under

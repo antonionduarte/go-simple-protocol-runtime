@@ -2,12 +2,12 @@ package protorun
 
 import "sync"
 
-// codecRegistry owns the runtime-wide wireID → owning protocol map
+// codecRegistry owns the runtime-wide wireID-to-owning-protocol map
 // used by Send to find the right codec and by processMessage to
 // route inbound payloads to the right protocol's mailbox.
 //
 // Built up at Start time as protocols call ProtocolContext.RegisterCodec.
-// Read on every send and every receive, write only at registration —
+// Read on every send and every receive, write only at registration:
 // hence sync.RWMutex.
 type codecRegistry struct {
 	mu     sync.RWMutex

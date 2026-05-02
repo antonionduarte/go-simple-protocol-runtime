@@ -16,7 +16,7 @@ type myMessage struct {
 }
 
 // echoProtocol is a minimal Protocol implementation suitable for example
-// snippets — it does no work, but registers a codec and a handler so the
+// snippets. It does no work, but registers a codec and a handler so the
 // snippet compiles.
 type echoProtocol struct{}
 
@@ -36,7 +36,7 @@ func Example() {
 	rt.Register(echoProtocol{})
 
 	// In real code, call rt.Run() here. The example just sketches the
-	// shape — Run blocks on signals, so we substitute a manual cancel.
+	// shape; Run blocks on signals, so we substitute a manual cancel.
 	go func() {
 		time.Sleep(10 * time.Millisecond)
 		rt.Cancel()

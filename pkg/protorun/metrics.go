@@ -9,18 +9,18 @@ package protorun
 // sessions established, panics recovered). Histograms are for
 // distributions where the tail matters (IPC request latency, ...).
 //
-// Implementations MUST be safe for concurrent use — the runtime calls
+// Implementations MUST be safe for concurrent use: the runtime calls
 // Metrics methods from many goroutines (per-protocol event loops,
 // transport pumps, retry timers, IPC dispatch).
 //
 // Attribute keys the runtime emits today:
 //
-//	wireID    — the message / IPC type, formatted as %#x.
-//	protocol  — concrete protocol Go type, formatted as %T.
-//	host      — peer Host involved, formatted via fmt.Stringer.
-//	where     — panic call-site tag ("message handler", ...).
-//	result    — terminal status of an IPC request: "completed",
-//	            "timeout", "no_handler", "responder_failed".
+//	wireID    the message / IPC type, formatted as %#x.
+//	protocol  concrete protocol Go type, formatted as %T.
+//	host      peer Host involved, formatted via fmt.Stringer.
+//	where     panic call-site tag ("message handler", ...).
+//	result    terminal status of an IPC request: "completed",
+//	          "timeout", "no_handler", "responder_failed".
 //
 // Names use the prefix "protorun." for everything the framework
 // emits so users can route them with a single label/regex.
@@ -38,7 +38,7 @@ type Attr struct {
 
 // WithMetrics replaces the runtime's default no-op Metrics with the
 // supplied implementation. Pass a nil value (or omit the option
-// entirely) to leave metrics disabled — the no-op default is cheap.
+// entirely) to leave metrics disabled; the no-op default is cheap.
 func WithMetrics(m Metrics) Option {
 	return func(r *Runtime) {
 		if m == nil {

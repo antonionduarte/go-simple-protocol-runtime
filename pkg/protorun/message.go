@@ -14,17 +14,17 @@ import (
 // required, and message values carry no framework-required fields.
 //
 // Sender information is delivered to handlers as a separate parameter
-// (handlers have signature func(M, transport.Host)) — messages don't
-// have to encode it on the wire, which keeps simple fixed-size message
-// types compatible with BinaryCodec[M].
+// (handlers have signature func(M, transport.Host)). Messages don't
+// have to encode it on the wire, which keeps simple fixed-size
+// message types compatible with BinaryCodec[M].
 type Message interface {
 	isMessage()
 }
 
 // BaseMessage is a zero-byte embeddable type. Embedding it makes any
 // struct satisfy the Message interface without imposing layout
-// constraints — encoding/binary can size structs that embed BaseMessage,
-// so BinaryCodec[M] works on them.
+// constraints; encoding/binary can size structs that embed
+// BaseMessage, so BinaryCodec[M] works on them.
 //
 //	type Ping struct {
 //	    runtime.BaseMessage

@@ -6,10 +6,11 @@ import (
 )
 
 // Timer represents a logical timer scheduled through the runtime. The
-// TimerID must be stable and unique within the protocol that scheduled it
-// — protocols don't share timer IDs, since timers are routed back to the
-// owning protocol via the ProtocolContext that scheduled them. Reusing
-// the same TimerID inside a single protocol replaces the earlier timer.
+// TimerID must be stable and unique within the protocol that scheduled
+// it. Protocols don't share timer IDs, since timers are routed back to
+// the owning protocol via the ProtocolContext that scheduled them.
+// Reusing the same TimerID inside a single protocol replaces the
+// earlier timer.
 type Timer interface {
 	TimerID() int
 }

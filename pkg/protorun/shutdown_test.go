@@ -52,7 +52,7 @@ func TestShutdown_ZeroTimeoutUsesDefault(t *testing.T) {
 
 // TestShutdown_TimeoutSentinel verifies the sentinel is returned
 // when shutdown takes longer than the supplied timeout. The
-// scenario is contrived (a stuck handler) — under normal operation
+// scenario is contrived (a stuck handler); under normal operation
 // shutdown completes in milliseconds.
 func TestShutdown_TimeoutSentinel(t *testing.T) {
 	self := transport.NewHost(0, "127.0.0.1")
@@ -64,11 +64,11 @@ func TestShutdown_TimeoutSentinel(t *testing.T) {
 	stuck := newProtoProtocol(&MockProtocol{}, 0)
 	rt.registerProtocol(stuck)
 	stuck.ensureContext()
-	// Wedge the event loop by registering a handler that never returns.
-	wedge := make(chan struct{})
-	defer close(wedge)
+	// Block the event loop with a handler that never returns.
+	block := make(chan struct{})
+	defer close(block)
 	RegisterRequestHandler(stuck.ctx, func(_ *benchReq, _ Responder[*benchRep]) {
-		<-wedge // Block forever (until test cleanup).
+		<-block // Block forever (until test cleanup).
 	})
 
 	if err := rt.start(); err != nil {

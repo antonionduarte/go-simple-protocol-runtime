@@ -21,8 +21,8 @@ make hooks-install   # installs the pre-commit hook (lint + tests on staged Go)
 make build           # go build ./...
 make test            # go test ./...
 make test-race       # go test -race ./...
-make lint            # golangci-lint run ./... — must report 0 issues
-make modernize-check # gopls modernize analyzer — should report nothing
+make lint            # golangci-lint run ./..., must report 0 issues
+make modernize-check # gopls modernize analyzer, should report nothing
 make coverage        # go test -coverprofile=coverage.out + summary
 ```
 
@@ -48,7 +48,7 @@ GOSSIP_SCALE_10K=1 go test -run TestGossip_10000Nodes_Scale -timeout 10m ./cmd/g
 - Cross-protocol coordination is IPC: `RegisterRequestHandler` /
   `SendRequest` for synchronous fetches, `SubscribeNotification` /
   `PublishNotification` for fan-out. Direct Go method calls between
-  protocols are an anti-pattern — the test driver in `cmd/gossip` uses a
+  protocols are an anti-pattern; the test driver in `cmd/gossip` uses a
   `triggerer` harness protocol for exactly this reason.
 - All protocol state is event-loop-owned; no locks unless you have a
   public method callable from another goroutine, and even then prefer
@@ -67,8 +67,11 @@ it owns; protocol-side logs come from `ctx.Logger()` which is already
 tagged). Prefer structured attributes over interpolated strings:
 
 ```go
-ctx.Logger().Info("session up", "peer", peer.ToString(), "rtt_ms", rtt)
+ctx.Logger().Info("session up", "peer", peer, "rtt_ms", rtt)
 ```
+
+`Host` satisfies `fmt.Stringer`, so passing it directly as a slog
+attribute formats it as `ip:port` automatically.
 
 ### Tests
 
@@ -81,7 +84,7 @@ ctx.Logger().Info("session up", "peer", peer.ToString(), "rtt_ms", rtt)
   (`reservePorts`) so they can run with `-count=N` without colliding.
   See `cmd/gossip/integration_test.go` for the pattern.
 - For framework-internal tests, prefer real `SessionLayer` over mocking
-  it — most lifecycle bugs the suite has caught lived at the
+  it. Most lifecycle bugs the suite has caught lived at the
   session-layer boundary.
 
 ### Adding a new IPC type
@@ -120,7 +123,7 @@ protorun.SendRequest(ctx, &Lookup{Key: "foo"}, func(rep *LookupReply, err error)
 
 For notifications, use `BaseNotification` plus
 `SubscribeNotification` / `PublishNotification`. Notifications are
-fan-out; one publisher, many subscribers per type.
+fan-out: one publisher, many subscribers per type.
 
 ## Pull request checklist
 
@@ -136,7 +139,7 @@ Before submitting:
 - [ ] Behavioral changes mentioned in the PR description
 
 CI runs all of the above on every PR and gates merges on lint passing
-for new code (existing violations are not blocking, only regressions).
+for new code; existing violations are not blocking, only regressions.
 
 ## Communication style
 

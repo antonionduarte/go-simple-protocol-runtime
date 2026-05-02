@@ -9,7 +9,7 @@ import (
 
 // Host identifies a peer by string IP-or-hostname plus port. The IP field
 // may hold an IPv4 dotted-decimal address, an IPv6 address, or a hostname
-// — net.Dial handles all three.
+// (net.Dial handles all three).
 type Host struct {
 	Port int
 	IP   string

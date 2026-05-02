@@ -65,7 +65,7 @@ func (s *panicReqServer) Start(ctx ProtocolContext) {
 func (s *panicReqServer) Init(_ ProtocolContext) {}
 
 // panicReqServerNoHandler is panicReqServer minus the PanicHandler
-// implementation — used to verify the framework's default recovery
+// implementation, used to verify the framework's default recovery
 // path works when no protocol-level hook is provided.
 type panicReqServerNoHandler struct{}
 
@@ -131,7 +131,7 @@ func (s *secondCallProto) Start(ctx ProtocolContext) {
 }
 func (s *secondCallProto) Init(_ ProtocolContext) {}
 
-// pairOfRequestors sends two requests in sequence — second one waits
+// pairOfRequestors sends two requests in sequence; the second one waits
 // for the first reply, so the event loop must stay alive through the
 // first (panicking) handler invocation.
 type pairOfRequestors struct {
@@ -165,7 +165,7 @@ func TestRecovery_RequestHandler_PanicAutoFails(t *testing.T) {
 
 	startIPCRuntime(t, server, &timeoutRequestor{
 		target:  result,
-		timeout: 5 * time.Second, // long timeout — auto-fail must arrive first
+		timeout: 5 * time.Second, // long timeout; auto-fail must arrive first
 	})
 
 	if !result.wait(2 * time.Second) {
@@ -225,7 +225,7 @@ func TestRecovery_EventLoopSurvives(t *testing.T) {
 	}
 
 	if !second.wait(2 * time.Second) {
-		t.Fatalf("second reply never arrived — event loop appears wedged after panic")
+		t.Fatalf("second reply never arrived; event loop appears stuck after panic")
 	}
 	if second.err != nil {
 		t.Fatalf("second request unexpectedly failed: %v", second.err)
@@ -251,7 +251,7 @@ func TestRecovery_NotificationHandlerPanic(t *testing.T) {
 		t.Fatalf("non-panicking subscriber never received the notification")
 	}
 
-	// Wait for the panic to be reported by the runtime — this is the
+	// Wait for the panic to be reported by the runtime; this is the
 	// synchronization point that guarantees bad's handler ran. Just
 	// reading bad.delivered here would race against bad's event loop.
 	ev, ok := rec.waitFor(2 * time.Second)
@@ -280,7 +280,7 @@ func TestRecovery_PanicHandler_ItselfPanics(t *testing.T) {
 	})
 
 	if !result.wait(2 * time.Second) {
-		t.Fatalf("auto-fail never arrived — runtime may have wedged on PanicHandler-panic")
+		t.Fatalf("auto-fail never arrived; runtime may have stalled on PanicHandler-panic")
 	}
 	if !errors.Is(result.err, ErrHandlerPanicked) {
 		t.Fatalf("expected ErrHandlerPanicked, got %v", result.err)

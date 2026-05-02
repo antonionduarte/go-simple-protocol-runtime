@@ -3,8 +3,8 @@ package transport
 // Address is the abstract identity of a peer reachable through a
 // transport.Layer. Today the only implementation is Host (an IP/port
 // pair tied to TCP), but the interface exists so future Layer
-// backends — UDP, in-memory mesh for tests, QUIC, transport-over-
-// websockets — can supply their own address type without forcing the
+// backends (UDP, in-memory mesh for tests, QUIC, transport-over-
+// websockets) can supply their own address type without forcing the
 // runtime to know about it.
 //
 // String must return a stable human-readable representation; the
@@ -31,7 +31,7 @@ type Address interface {
 
 // Equal compares this Host to another Address. Returns false if the
 // other side isn't a Host (different transport backend or test
-// double). Reflexive, symmetric, transitive — Host is a comparable
+// double). Reflexive, symmetric, transitive: Host is a comparable
 // struct, so == on the underlying values gives us all three for free.
 func (h Host) Equal(other Address) bool {
 	if other == nil {
@@ -39,8 +39,8 @@ func (h Host) Equal(other Address) bool {
 	}
 	o, ok := other.(Host)
 	if !ok {
-		// Pointer-receiver call site; accept *Host too for ergonomics
-		// in user code that holds onto a *Host (rare but legal).
+		// Pointer-receiver call site; accept *Host too for user code
+		// that holds onto a *Host (rare but legal).
 		hp, isPtr := other.(*Host)
 		if !isPtr || hp == nil {
 			return false

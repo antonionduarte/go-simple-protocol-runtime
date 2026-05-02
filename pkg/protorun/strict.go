@@ -14,7 +14,7 @@ import (
 // What strict mode catches:
 //
 //   - Double registration of a wireID for codec / handler /
-//     request handler — panics at the offending call site.
+//     request handler. Panics at the offending call site.
 //   - Phase ordering: registration calls (RegisterCodec et al.) only
 //     inside Start; active calls (Connect, Send, SendRequest,
 //     PublishNotification) only inside or after Init. Violations
@@ -25,7 +25,7 @@ import (
 //
 // Calls landing in the wrong phase that the framework can recover
 // from gracefully (e.g. Connect after Cancel) are not strict-mode
-// failures — they return their normal sentinel errors.
+// failures; they return their normal sentinel errors.
 
 // protoPhase is the per-protocol lifecycle phase. Tracked via
 // atomic.Int32 because reads happen on many goroutines (the protocol's
@@ -62,7 +62,7 @@ func (p protoPhase) String() string {
 
 // defaultStrictHandlerTimeout is the watchdog threshold for "this
 // handler has been running too long". Picked as a generous upper
-// bound — well-behaved handlers complete in microseconds.
+// bound; well-behaved handlers complete in microseconds.
 const defaultStrictHandlerTimeout = 5 * time.Second
 
 // WithStrict enables runtime invariant checks that the type system
@@ -134,7 +134,7 @@ func (p *protoProtocol) requireActivePhase(action string) {
 // strictWatchdog arms a watchdog timer for the supplied handler if
 // strict mode is on with a positive timeout. The returned stop func
 // cancels the watchdog (no-op if it already fired). It is safe to
-// call Stop after the watchdog fired — the underlying time.AfterFunc
+// call Stop after the watchdog fired; the underlying time.AfterFunc
 // is reentrant.
 func (p *protoProtocol) strictWatchdog(where string) func() {
 	if p.runtime == nil || !p.runtime.strict || p.runtime.strictHandlerTimeout <= 0 {

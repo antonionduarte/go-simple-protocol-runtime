@@ -11,7 +11,7 @@
 //     notifications and receives one event per add or remove.
 //
 // All state is owned by this protocol's event loop. There are no
-// public methods that read state from outside the loop — observers
+// public methods that read state from outside the loop. Observers
 // use IPC, which the runtime routes onto the loop for them.
 package membership
 
@@ -25,7 +25,7 @@ import (
 type GetView struct{ protorun.BaseRequest }
 
 // View is the reply to GetView. Peers is a fresh slice owned by the
-// caller — safe to mutate.
+// caller and safe to mutate.
 type View struct {
 	protorun.BaseReply
 	Peers []transport.Host

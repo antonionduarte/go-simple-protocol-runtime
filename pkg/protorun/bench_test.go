@@ -17,7 +17,7 @@ type benchMsg struct {
 }
 
 // BenchmarkBinaryCodec_Marshal measures the marshal path for a fixed-
-// size message — the hottest cost on the send side.
+// size message: the hottest cost on the send side.
 func BenchmarkBinaryCodec_Marshal(b *testing.B) {
 	codec := BinaryCodec[*benchMsg]{}
 	msg := &benchMsg{Seq: 42}
@@ -29,7 +29,7 @@ func BenchmarkBinaryCodec_Marshal(b *testing.B) {
 	}
 }
 
-// BenchmarkBinaryCodec_Unmarshal measures the unmarshal path — the
+// BenchmarkBinaryCodec_Unmarshal measures the unmarshal path: the
 // hottest cost on the receive side.
 func BenchmarkBinaryCodec_Unmarshal(b *testing.B) {
 	codec := BinaryCodec[*benchMsg]{}
@@ -45,7 +45,7 @@ func BenchmarkBinaryCodec_Unmarshal(b *testing.B) {
 	}
 }
 
-// BenchmarkWireID measures the cost of computing a wire identifier —
+// BenchmarkWireID measures the cost of computing a wire identifier:
 // per-call overhead for the lookup-by-type path.
 func BenchmarkWireID(b *testing.B) {
 
@@ -55,7 +55,7 @@ func BenchmarkWireID(b *testing.B) {
 }
 
 // BenchmarkProcessMessage measures end-to-end inbound dispatch:
-// encode-the-wireid → decode → push onto the protocol's mailbox.
+// encode the wireID, decode, push onto the protocol's mailbox.
 // A drainer goroutine keeps the channel from filling up so we measure
 // the dispatch path itself, not back-pressure.
 func BenchmarkProcessMessage(b *testing.B) {

@@ -2,9 +2,9 @@ package protorun
 
 import "testing"
 
-// fixedSizePing is a test message used to exercise BinaryCodec — every
-// field is fixed-size so encoding/binary can size the struct. It embeds
-// BaseMessage (zero-byte) to satisfy the Message interface.
+// fixedSizePing is a test message used to exercise BinaryCodec.
+// Every field is fixed-size so encoding/binary can size the struct.
+// It embeds BaseMessage (zero-byte) to satisfy the Message interface.
 type fixedSizePing struct {
 	BaseMessage
 	Seq   uint64

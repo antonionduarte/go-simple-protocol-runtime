@@ -92,7 +92,7 @@ func TestSessionLayerFailedConnection(t *testing.T) {
 // calls arriving after Cancel do not block indefinitely. Pre-fix, these
 // methods did raw blocking sends on unbuffered channels whose only consumer
 // (the handler goroutine) had already exited, deadlocking any caller that
-// happened to be in flight when Cancel ran — including a protocol's
+// happened to be in flight when Cancel ran, including a protocol's
 // ctx.Send invoked during shutdown.
 func TestSessionLayer_SendAfterCancel(t *testing.T) {
 	self := NewHost(7250, "127.0.0.1")

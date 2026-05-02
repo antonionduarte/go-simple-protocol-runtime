@@ -23,7 +23,7 @@ func TestCodecRegistry_SetGet(t *testing.T) {
 }
 
 // TestCodecRegistry_OverwriteWins verifies a second Set replaces the
-// first — last-writer-wins per the documented contract.
+// first. Last-writer-wins per the documented contract.
 func TestCodecRegistry_OverwriteWins(t *testing.T) {
 	r := newCodecRegistry()
 	first, second := &protoProtocol{}, &protoProtocol{}

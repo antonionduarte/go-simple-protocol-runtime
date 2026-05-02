@@ -22,7 +22,7 @@ func TestProtocolContext_NarrowInterfaces(t *testing.T) {
 	var _ Identity = (*protocolContext)(nil)
 	var _ ProtocolContext = (*protocolContext)(nil)
 
-	// And the inverse — a function declared in terms of a single
+	// And the inverse: a function declared in terms of a single
 	// capability accepts a full ProtocolContext.
 	use := func(c Connector) { _ = c }
 	rt := New(transport.NewHost(0, "127.0.0.1"))
@@ -164,7 +164,7 @@ func TestStrict_Disabled_NoPanic(t *testing.T) {
 	rt.Register(&strictPanicProtocol{
 		startBody: func(ctx ProtocolContext) {
 			RegisterCodec(ctx, BinaryCodec[*benchMsg]{})
-			RegisterCodec(ctx, BinaryCodec[*benchMsg]{}) // double — would panic in strict mode
+			RegisterCodec(ctx, BinaryCodec[*benchMsg]{}) // double, would panic in strict mode
 		},
 	})
 

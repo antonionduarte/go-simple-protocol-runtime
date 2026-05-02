@@ -179,7 +179,7 @@ func (r *responder[Rep]) Fail(err error) {
 
 // RegisterRequestHandler installs a handler for Req on the supplied
 // ProtocolContext. Each Req type has at most one handler runtime-wide
-// — registering a second time replaces the first and logs a warning.
+// (registering a second time replaces the first and logs a warning).
 //
 // The handler receives the typed request and a Responder[Rep] that it
 // must call exactly once with either Reply or Fail. Sync and async
@@ -193,7 +193,7 @@ func RegisterRequestHandler[Req Request, Rep Reply](
 	ctx.registerRequestHandler(WireID[Req](), func(raw Request, token replyToken) {
 		typed, ok := raw.(Req)
 		if !ok {
-			// Type mismatch — should be unreachable since wire ID
+			// Type mismatch should be unreachable since wire ID
 			// derives from the type, but defend against bug-introduced
 			// misroutes by failing the responder rather than panicking.
 			ctx.deliverReplyToToken(token, nil,
@@ -202,7 +202,7 @@ func RegisterRequestHandler[Req Request, Rep Reply](
 		}
 		r := &responder[Rep]{runtime: ctx.runtimePtr(), token: token}
 		// Recover here (not just at the event-loop dispatcher) so we
-		// can auto-fail the responder before the panic escapes — that
+		// can auto-fail the responder before the panic escapes; that
 		// way the requester sees ErrHandlerPanicked immediately
 		// instead of blocking until the request timeout fires. The
 		// outer dispatcher's safeCall is a fallback for the (by-
@@ -215,9 +215,9 @@ func RegisterRequestHandler[Req Request, Rep Reply](
 				// protocol's event loop; r.Fail wakes the requester's
 				// event loop. Doing them in this order guarantees
 				// "if the requester saw ErrHandlerPanicked, then
-				// OnPanic has already been called" — which is the
-				// natural assumption a supervisor / metrics hook will
-				// make.
+				// OnPanic has already been called", which is the
+				// natural assumption a supervisor / metrics hook
+				// will make.
 				ctx.reportPanic("request handler", rec, debug.Stack())
 				r.Fail(fmt.Errorf("%w: %v", ErrHandlerPanicked, rec))
 			}
@@ -229,7 +229,7 @@ func RegisterRequestHandler[Req Request, Rep Reply](
 // SendRequest sends req to the protocol that handles its type and
 // invokes onReply on the requester's protocol event loop when the
 // reply or a terminal error arrives. Uses the runtime's default
-// request timeout — see SendRequestWithTimeout to override per call.
+// request timeout; see SendRequestWithTimeout to override per call.
 func SendRequest[Req Request, Rep Reply](
 	ctx ProtocolContext,
 	req Req,

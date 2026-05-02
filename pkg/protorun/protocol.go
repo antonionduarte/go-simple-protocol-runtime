@@ -75,7 +75,7 @@ type (
 	// It is provided to Protocol.Start and Protocol.Init. It composes the
 	// fine-grained capability interfaces (Connector, Sender, Timing,
 	// Identity) so handlers and helpers can declare narrower deps if
-	// they want — a function that only needs to send messages can take
+	// they want: a function that only needs to send messages can take
 	// Sender, a function that only needs the local Host can take
 	// Identity, and so on.
 	//
@@ -95,7 +95,7 @@ type (
 		registerCodec(wireID uint64, c codec)
 		registerHandler(wireID uint64, fn func(Message, transport.Host))
 
-		// Internal hooks used by the IPC API in ipc.go. Same rationale —
+		// Internal hooks used by the IPC API in ipc.go. Same rationale:
 		// generic methods aren't allowed on interfaces, so the typed
 		// helpers route through these unexported methods.
 		registerRequestHandler(wireID uint64, fn func(Request, replyToken))
@@ -213,7 +213,7 @@ func (p *protoProtocol) Start(ctx context.Context, wg *sync.WaitGroup) {
 	// wg.Add happens AFTER protocol.Start returns. If user's Start
 	// panics (e.g. a strict-mode invariant fires), no eventHandler
 	// goroutine is created, so the WG counter must not have been
-	// incremented — otherwise Cancel's wg.Wait() would block forever.
+	// incremented; otherwise Cancel's wg.Wait() would block forever.
 	p.protocol.Start(p.ctx)
 	p.setPhase(phaseRegistered)
 	wg.Add(1)
@@ -323,8 +323,8 @@ func (c *protocolContext) runtimePtr() *Runtime { return c.runtime }
 // registerRequestHandler installs fn as the request handler for wireID
 // runtime-wide and points the runtime's request-routing table at this
 // protocol. A second registration for the same wireID logs a warning
-// and replaces the prior route — the framework allows it for
-// hot-reload scenarios but it is almost always a programming error in
+// and replaces the prior route. The framework allows it for hot-
+// reload scenarios but it is almost always a programming error in
 // production code.
 func (c *protocolContext) registerRequestHandler(wireID uint64, fn func(Request, replyToken)) {
 	c.proto.requireRegisterPhase("RegisterRequestHandler")
@@ -461,7 +461,7 @@ func (p *protoProtocol) reportPanic(where string, rec any, stack []byte) {
 		"stack", string(stack),
 	)
 	if h, ok := p.protocol.(PanicHandler); ok {
-		// Defensive recover around the user's PanicHandler — if it
+		// Defensive recover around the user's PanicHandler. If it
 		// also panics we don't want an infinite loop, just drop it.
 		func() {
 			defer func() { _ = recover() }()
@@ -472,10 +472,10 @@ func (p *protoProtocol) reportPanic(where string, rec any, stack []byte) {
 
 // deliverReply matches an inbound reply (or timeout) to its pending
 // SendRequest entry and invokes the callback on the requester's event
-// loop. If no pending entry is found the reply is dropped — the most
-// common cause is a real reply landing after the timeout already
-// fired (or vice versa); first-arrival wins, second-arrival is a
-// silent no-op.
+// loop. If no pending entry is found the reply is dropped: the
+// most common cause is a real reply landing after the timeout
+// already fired (or vice versa). First-arrival wins, second-arrival
+// is a silent no-op.
 func (p *protoProtocol) deliverReply(rep inboundReply) {
 	p.pendingMu.Lock()
 	pending, ok := p.pending[rep.requestID]
@@ -484,7 +484,7 @@ func (p *protoProtocol) deliverReply(rep inboundReply) {
 	}
 	p.pendingMu.Unlock()
 	if !ok {
-		// Late arrival — the other branch (timeout vs reply) already
+		// Late arrival: the other branch (timeout vs reply) already
 		// claimed this requestID. Counter so operators can see how
 		// often this happens; in strict mode also a warn-level log.
 		if p.runtime != nil {
@@ -556,8 +556,8 @@ func RegisterCodec[M Message](ctx ProtocolContext, c Codec[M]) {
 // on the supplied ProtocolContext. Handlers receive both the decoded
 // message and the host that sent it; sender info doesn't need to be
 // encoded on the wire. Free function for the same reason as
-// RegisterCodec — generic methods aren't allowed on interfaces. The
-// framework performs the type assertion before invoking fn.
+// RegisterCodec, since generic methods aren't allowed on interfaces.
+// The framework performs the type assertion before invoking fn.
 func RegisterHandler[M Message](ctx ProtocolContext, fn func(M, transport.Host)) {
 	ctx.registerHandler(WireID[M](), func(raw Message, from transport.Host) {
 		fn(raw.(M), from)

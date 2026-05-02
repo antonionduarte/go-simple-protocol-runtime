@@ -1,6 +1,6 @@
 // Package config holds the YAML schema and loader used by the pingpong
-// example. It is intentionally outside the framework — the runtime
-// itself reads no config files; users wire their own configuration
+// example. It is intentionally outside the framework: the runtime
+// itself reads no config files. Users wire their own configuration
 // loaders to whatever knobs the framework exposes (see
 // protorun.LoggingConfig, protorun.WithLogger, protorun.WithRetryPolicy,
 // protorun.Default*Buffer).

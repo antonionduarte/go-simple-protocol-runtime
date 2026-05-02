@@ -55,7 +55,7 @@ type Runtime struct {
 	retryMu           sync.Mutex
 	connectionRetries map[transport.Host]*retryState
 
-	// IPC routing — request/handler map + many-subscriber notification
+	// IPC routing: request/handler map plus many-subscriber notification
 	// fanout. See ipc_router.go.
 	ipc *ipcRouter
 
@@ -188,7 +188,7 @@ func (r *Runtime) start() error {
 }
 
 // registerNetworkLayer attaches a Layer. Most users wire this
-// via WithTCPTransport — only test code that needs to inject a mock
+// via WithTCPTransport. Only test code that needs to inject a mock
 // transport reaches in here directly.
 func (r *Runtime) registerNetworkLayer(networkLayer transport.Layer) {
 	r.networkLayer = networkLayer
@@ -250,12 +250,12 @@ func (r *Runtime) disconnect(host transport.Host) error {
 // These helpers are the runtime-side glue behind the public IPC API in
 // ipc.go. They follow the same pattern as session-event fanout: cross-
 // protocol channel writes are ctx-guarded so a slow consumer or a
-// shutdown in flight can't wedge the caller.
+// shutdown in flight can't block the caller indefinitely.
 
 // deliverReply pushes a reply (or terminal error) onto the requester's
-// replyEvents channel. Safe to call from any goroutine — responder
-// methods (Reply / Fail) and time.AfterFunc timeout callbacks both end
-// up here.
+// replyEvents channel. Safe to call from any goroutine: responder
+// methods (Reply / Fail) and time.AfterFunc timeout callbacks both
+// end up here.
 func (r *Runtime) deliverReply(token replyToken, rep Reply, err error) {
 	select {
 	case token.requester.replyEvents <- inboundReply{requestID: token.requestID, rep: rep, err: err}:
@@ -267,7 +267,7 @@ func (r *Runtime) deliverReply(token replyToken, rep Reply, err error) {
 // a request ID, registers a pending entry, then either routes the
 // request to its handler (and arms a timeout) or delivers
 // ErrNoRequestHandler immediately. Pending is registered before any
-// delivery path so deliverReply can always find the entry — without
+// delivery path so deliverReply can always find the entry. Without
 // it, the no-handler error would be dropped on the floor.
 func (r *Runtime) sendRequest(
 	requester *protoProtocol,
@@ -323,7 +323,7 @@ func (r *Runtime) unsubscribeNotification(proto *protoProtocol, wireID uint64) {
 // publishNotification fans n out to every subscriber of wireID. Each
 // subscriber's notificationEvents channel write is ctx-guarded; if the
 // runtime is shutting down or a single subscriber's mailbox is full we
-// stop fanning out and return — the publisher should not block on
+// stop fanning out and return. The publisher should not block on
 // subscribers it doesn't know about.
 func (r *Runtime) publishNotification(wireID uint64, n Notification) {
 	wireIDAttr := Attr{Key: "wireID", Value: fmt.Sprintf("%#x", wireID)}
@@ -453,7 +453,7 @@ func (r *Runtime) dispatchSessionEvent(ctx context.Context, ev transport.Session
 				Attr{Key: "attempts", Value: attempts})
 			return r.fanoutSessionEvent(ctx, sessionEvent{kind: sessionGivenUpEvent, host: e.Host(), attempts: attempts})
 		}
-		// SessionFailed with retry-in-progress is suppressed from fanout —
+		// SessionFailed with retry-in-progress is suppressed from fanout:
 		// protocols only see the eventual SessionConnected (success) or
 		// SessionGivenUp (terminal failure). Without a retry policy in
 		// effect this branch is unreachable because no retry state existed.
@@ -463,7 +463,7 @@ func (r *Runtime) dispatchSessionEvent(ctx context.Context, ev transport.Session
 }
 
 // fanoutSessionEvent delivers ev into every protocol's sessionEvents
-// channel, ctx-guarded so a slow consumer or shutdown doesn't wedge the
+// channel, ctx-guarded so a slow consumer or shutdown doesn't block the
 // caller. Returns false on ctx cancellation.
 func (r *Runtime) fanoutSessionEvent(ctx context.Context, ev sessionEvent) bool {
 	for _, proto := range r.protocols {
@@ -543,7 +543,7 @@ func (r *Runtime) processMessage(buffer bytes.Buffer, from transport.Host) {
 
 // WithTCPTransport wires the runtime's transport + session layers with
 // the framework's TCP+Hello/Ack stack. It is the typical way to set up
-// a runtime — most users never need to construct TCPLayer or
+// a runtime; most users never need to construct TCPLayer or
 // SessionLayer themselves.
 //
 // The supplied ctx becomes the parent for both layers' internal
@@ -560,9 +560,9 @@ func WithTCPTransport(ctx context.Context) Option {
 // WithTransport injects a pre-constructed transport stack. Use this
 // when you need to plug in a non-TCP transport (UDP, in-memory, mock
 // for tests), tune buffer sizes / timeouts on the existing layers, or
-// otherwise own the construction yourself. Either argument may be nil
-// — the runtime accepts a network layer without a session layer if
-// you wire sessions some other way, and vice versa.
+// otherwise own the construction yourself. Either argument may be
+// nil; the runtime accepts a network layer without a session layer
+// if you wire sessions some other way, and vice versa.
 //
 // For the default TCP setup, prefer WithTCPTransport(ctx).
 func WithTransport(layer transport.Layer, session *transport.SessionLayer) Option {

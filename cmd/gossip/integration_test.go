@@ -17,7 +17,7 @@ import (
 
 const (
 	nodeCount        = 10
-	expectedViewSize = 3 // ring (i±1) + chord (i±5) → 3 unique neighbors per node
+	expectedViewSize = 3 // ring (i+/-1) + chord (i+/-5) -> 3 unique neighbors per node
 	convergeTimeout  = 5 * time.Second
 	deliverTimeout   = 2 * time.Second
 )
@@ -52,8 +52,8 @@ func (r *recorder) count(payload string) int {
 
 // viewWatcher is a test harness protocol that subscribes to
 // membership.ViewChanged and tracks the running peer count for
-// convergence assertions. The lock lives here — at the test boundary
-// — so the production membership and gossip protocols can stay
+// convergence assertions. The lock lives here at the test boundary,
+// so the production membership and gossip protocols can stay
 // lock-free with all state owned by their event loops.
 type viewWatcher struct {
 	mu   sync.Mutex

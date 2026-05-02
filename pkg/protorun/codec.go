@@ -11,20 +11,20 @@ import (
 
 // WireNamer lets a message type freeze its wire identifier across Go-type
 // renames or package moves. Optional, but production protocols SHOULD
-// implement it on every message type — see WireID for why.
+// implement it on every message type; see WireID for why.
 type WireNamer interface {
 	WireName() string
 }
 
 // WireID returns the deterministic 64-bit wire identifier for type T.
-// Use this when you need the id without an instance — e.g. inside a
+// Use this when you need the id without an instance, e.g. inside a
 // generic registration helper. The id is the FNV-1a 64-bit hash of
 // either T.WireName() (if T implements WireNamer) or
 // reflect.TypeOf(*new(T)).String() (the Go type name, fully qualified).
 //
 // Used internally for Message, Request, Reply, and Notification types.
 //
-// IMPORTANT: the default — hashing the Go type name — silently changes
+// IMPORTANT: the default (hashing the Go type name) silently changes
 // when the type is renamed, moved between packages, or when the import
 // path changes. Such a change breaks wire compatibility with already-
 // deployed peers without any compile-time signal. Production protocols
@@ -39,7 +39,7 @@ func WireID[T any]() uint64 {
 	}
 	// Allocate a non-nil instance to call any optional WireName() method.
 	// For pointer types, `var zero T` is typed nil and would panic on a
-	// method call — reflect.New(t.Elem()) produces a fresh *T.
+	// method call. reflect.New(t.Elem()) produces a fresh *T.
 	var probe any
 	if t.Kind() == reflect.Pointer {
 		probe = reflect.New(t.Elem()).Interface()
@@ -117,8 +117,8 @@ func (a codecAdapter[M]) unmarshal(data []byte) (Message, error) {
 }
 
 // (RegisterCodec[M] and RegisterHandler[M] live in protocol.go alongside
-// ProtocolContext — they're free-function workarounds for the lack of
-// generic methods on Go interfaces, not codec primitives.)
+// ProtocolContext: they're free-function workarounds for the lack
+// of generic methods on Go interfaces, not codec primitives.)
 
 // BinaryCodec is a Codec[M] that encodes M with encoding/binary using
 // little-endian byte order. It works for any M whose fields are

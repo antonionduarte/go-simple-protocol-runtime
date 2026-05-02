@@ -161,8 +161,8 @@ func (t *TCPLayer) Cancel() {
 
 // closeOnCtxDone is started by NewTCPLayer to ensure the listener and any
 // active connections are closed as soon as the layer's context is cancelled
-// — whether that happens via Cancel() or because the parent context was
-// cancelled. This makes ctx the single source of truth for liveness.
+// (whether via Cancel() or because the parent context was cancelled).
+// This makes ctx the single source of truth for liveness.
 func (t *TCPLayer) closeOnCtxDone() {
 	<-t.ctx.Done()
 	if t.listener != nil {
@@ -189,10 +189,11 @@ func (t *TCPLayer) send(networkMessage Message, sendTo Host) {
 		t.logger.Error("tcp encode frame failed", "host", sendTo.String(), "err", err)
 		t.outEvents <- &Failed{host: sendTo}
 		// Call the internal disconnect directly: invoking the public
-		// Disconnect would try to push onto disconnectChan, which is drained
-		// by the handler goroutine that is currently inside this very send()
-		// call — a deadlock until ctx cancellation. The lowercase form takes
-		// the mutex and emits the event synchronously.
+		// Disconnect would try to push onto disconnectChan, which is
+		// drained by the handler goroutine that is currently inside this
+		// very send() call. That deadlocks until ctx cancellation. The
+		// lowercase form takes the mutex and emits the event
+		// synchronously.
 		t.disconnect(sendTo)
 		return
 	}

@@ -75,9 +75,13 @@ completed during the polish passes leading up to v0.1.0.
 - [ ] `Runtime.Shutdown(timeout)` for graceful drain (today only
       forceful `Cancel` is exposed).
 - [ ] Wire-format version negotiation in the Hello handshake.
-- [ ] `transport.Address` interface so non-TCP transports become
-      possible (today the `Host` struct is hardcoded into the
-      transport / runtime APIs).
+- [x] `transport.Address` interface defined; Host implements it.
+- [ ] Migrate `transport.Layer` and downstream APIs to take
+      `Address` instead of `Host`. Deferred from the v0.1.0 polish
+      pass: the interface exists (so users can declare custom
+      address types), but the concrete Layer methods still take
+      Host. Will land once a real non-TCP backend (UDP / in-memory
+      mesh / QUIC) needs the abstraction.
 - [ ] Decompose `Runtime` into focused subsystems
       (`ipcRouter`, `retryTable`, `timerTable`, `codecRegistry`).
 - [ ] Tag `v0.1.0`.

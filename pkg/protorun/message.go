@@ -41,7 +41,7 @@ func (r *Runtime) sendMessage(msg Message, sendTo transport.Host) error {
 	logger := r.Logger()
 
 	wireID := wireIDOf(msg)
-	proto, ok := r.codecLookup[wireID]
+	proto, ok := r.codecs.Get(wireID)
 	if !ok {
 		return fmt.Errorf("%w: %T (wireID=%#x)", ErrNoCodec, msg, wireID)
 	}

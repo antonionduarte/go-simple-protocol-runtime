@@ -292,10 +292,7 @@ func (c *protocolContext) Logger() *slog.Logger { return c.logger }
 func (c *protocolContext) registerCodec(wireID uint64, codec codec) {
 	c.proto.requireRegisterPhase("RegisterCodec")
 	if c.runtime.strict {
-		c.runtime.codecLookupMu.RLock()
-		_, exists := c.runtime.codecLookup[wireID]
-		c.runtime.codecLookupMu.RUnlock()
-		if exists {
+		if _, exists := c.runtime.codecs.Get(wireID); exists {
 			strictPanic("RegisterCodec for wireID=%#x called twice", wireID)
 		}
 	}
@@ -304,9 +301,7 @@ func (c *protocolContext) registerCodec(wireID uint64, codec codec) {
 	// runtime-level lookup table. RegisterCodec should be called once
 	// per (protocol, message-type) pair; if two protocols register the
 	// same wire id, the last one wins (and the operator should investigate).
-	c.runtime.codecLookupMu.Lock()
-	c.runtime.codecLookup[wireID] = c.proto
-	c.runtime.codecLookupMu.Unlock()
+	c.runtime.codecs.Set(wireID, c.proto)
 }
 
 func (c *protocolContext) registerHandler(wireID uint64, fn func(Message, transport.Host)) {
@@ -333,18 +328,15 @@ func (c *protocolContext) runtimePtr() *Runtime { return c.runtime }
 // production code.
 func (c *protocolContext) registerRequestHandler(wireID uint64, fn func(Request, replyToken)) {
 	c.proto.requireRegisterPhase("RegisterRequestHandler")
-	c.runtime.requestRoutesMu.Lock()
-	if existing, ok := c.runtime.requestRoutes[wireID]; ok && existing.proto != c.proto {
+	prev, hadPrev := c.runtime.ipc.RegisterRequestRoute(wireID, c.proto, fn)
+	if hadPrev && prev.proto != c.proto {
 		if c.runtime.strict {
-			c.runtime.requestRoutesMu.Unlock()
 			strictPanic("RegisterRequestHandler for wireID=%#x already owned by another protocol", wireID)
 		}
 		c.logger.Warn("protorun: replacing existing request handler",
 			"wireID", wireID,
 		)
 	}
-	c.runtime.requestRoutes[wireID] = requestRoute{proto: c.proto, handler: fn}
-	c.runtime.requestRoutesMu.Unlock()
 }
 
 // sendRequest is the requester-side entry point. Routes through the

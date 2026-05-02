@@ -48,22 +48,16 @@ type Runtime struct {
 	ongoingPeriodicTimers map[int]context.CancelFunc
 
 	protocols          []*protoProtocol
-	codecLookup        map[uint64]*protoProtocol // wireID -> owning protocol; built up as codecs register
-	codecLookupMu      sync.RWMutex
+	codecs             *codecRegistry
 	protoChannelBuffer int // 0 means use defaultProtoChannelBuffer
 
 	retryPolicy       RetryPolicy
 	retryMu           sync.Mutex
 	connectionRetries map[transport.Host]*retryState
 
-	// IPC routing tables. requestRoutes maps a request wireID to the
-	// protocol that handles it (one handler per type, runtime-wide).
-	// notificationFanout maps a notification wireID to the set of
-	// subscribed protocols and their captured handler closures.
-	requestRoutes        map[uint64]requestRoute
-	requestRoutesMu      sync.RWMutex
-	notificationFanout   map[uint64]map[*protoProtocol]func(Notification)
-	notificationFanoutMu sync.RWMutex
+	// IPC routing — request/handler map + many-subscriber notification
+	// fanout. See ipc_router.go.
+	ipc *ipcRouter
 
 	defaultRequestTimeout time.Duration
 
@@ -145,10 +139,9 @@ func New(self transport.Host, opts ...Option) *Runtime {
 		cancelFunc:            cancel,
 		ongoingTimers:         make(map[int]*time.Timer),
 		ongoingPeriodicTimers: make(map[int]context.CancelFunc),
-		codecLookup:           make(map[uint64]*protoProtocol),
+		codecs:                newCodecRegistry(),
 		connectionRetries:     make(map[transport.Host]*retryState),
-		requestRoutes:         make(map[uint64]requestRoute),
-		notificationFanout:    make(map[uint64]map[*protoProtocol]func(Notification)),
+		ipc:                   newIPCRouter(),
 		logger:                slog.Default().With("component", "runtime"),
 		metrics:               noopMetrics{},
 	}
@@ -299,9 +292,7 @@ func (r *Runtime) sendRequest(
 	}
 	requester.pendingMu.Unlock()
 
-	r.requestRoutesMu.RLock()
-	route, ok := r.requestRoutes[wireID]
-	r.requestRoutesMu.RUnlock()
+	route, ok := r.ipc.Route(wireID)
 	if !ok {
 		r.deliverReply(token, nil, ErrNoRequestHandler)
 		return
@@ -317,31 +308,16 @@ func (r *Runtime) sendRequest(
 	}
 }
 
-// subscribeNotification adds proto to the fan-out set for wireID and
-// stores the handler closure under that protocol's key. A second call
-// from the same proto for the same wireID replaces the prior closure.
+// subscribeNotification / unsubscribeNotification / publishNotification
+// are thin pass-throughs to the IPC router. The runtime keeps the
+// publish path here only so it can emit the published / delivered
+// counters at the right moments.
 func (r *Runtime) subscribeNotification(proto *protoProtocol, wireID uint64, fn func(Notification)) {
-	r.notificationFanoutMu.Lock()
-	defer r.notificationFanoutMu.Unlock()
-	subs, ok := r.notificationFanout[wireID]
-	if !ok {
-		subs = make(map[*protoProtocol]func(Notification))
-		r.notificationFanout[wireID] = subs
-	}
-	subs[proto] = fn
+	r.ipc.Subscribe(wireID, proto, fn)
 }
 
 func (r *Runtime) unsubscribeNotification(proto *protoProtocol, wireID uint64) {
-	r.notificationFanoutMu.Lock()
-	defer r.notificationFanoutMu.Unlock()
-	subs, ok := r.notificationFanout[wireID]
-	if !ok {
-		return
-	}
-	delete(subs, proto)
-	if len(subs) == 0 {
-		delete(r.notificationFanout, wireID)
-	}
+	r.ipc.Unsubscribe(wireID, proto)
 }
 
 // publishNotification fans n out to every subscriber of wireID. Each
@@ -353,25 +329,9 @@ func (r *Runtime) publishNotification(wireID uint64, n Notification) {
 	wireIDAttr := Attr{Key: "wireID", Value: fmt.Sprintf("%#x", wireID)}
 	r.metrics.Counter("protorun.notification.published", 1, wireIDAttr)
 
-	r.notificationFanoutMu.RLock()
-	subs := r.notificationFanout[wireID]
-	// Snapshot the (proto, handler) pairs so we don't hold the lock
-	// while pushing onto channels (which can block on slow consumers).
-	pairs := make([]struct {
-		proto *protoProtocol
-		fn    func(Notification)
-	}, 0, len(subs))
-	for proto, fn := range subs {
-		pairs = append(pairs, struct {
-			proto *protoProtocol
-			fn    func(Notification)
-		}{proto, fn})
-	}
-	r.notificationFanoutMu.RUnlock()
-
-	for _, p := range pairs {
+	for _, sub := range r.ipc.SnapshotSubscribers(wireID) {
 		select {
-		case p.proto.notificationEvents <- inboundNotification{n: n, handler: p.fn}:
+		case sub.proto.notificationEvents <- inboundNotification{n: n, handler: sub.fn}:
 			r.metrics.Counter("protorun.notification.delivered", 1, wireIDAttr)
 		case <-r.ctx.Done():
 			return
@@ -517,8 +477,8 @@ func (r *Runtime) fanoutSessionEvent(ctx context.Context, ev sessionEvent) bool 
 }
 
 // processMessage decodes the wire id from the application-layer payload,
-// looks up the owning protocol via the runtime's codecLookup map, decodes
-// the message, and pushes a (msg, from) envelope onto that protocol's
+// looks up the owning protocol via the codecRegistry, decodes the
+// message, and pushes a (msg, from) envelope onto that protocol's
 // messageChannel. Sender info is delivered to handlers via the envelope's
 // from field, not via fields on the message itself.
 func (r *Runtime) processMessage(buffer bytes.Buffer, from transport.Host) {
@@ -535,9 +495,7 @@ func (r *Runtime) processMessage(buffer bytes.Buffer, from transport.Host) {
 	}
 	wireIDAttr := Attr{Key: "wireID", Value: fmt.Sprintf("%#x", wireID)}
 
-	r.codecLookupMu.RLock()
-	protocol, exists := r.codecLookup[wireID]
-	r.codecLookupMu.RUnlock()
+	protocol, exists := r.codecs.Get(wireID)
 	if !exists {
 		logger.Warn("received message for unknown wireID",
 			"from", from.String(),

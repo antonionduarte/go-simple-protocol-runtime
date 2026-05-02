@@ -17,8 +17,8 @@ func TestSendMessage_CodecError(t *testing.T) {
 	rt.registerProtocol(proto)
 
 	// Construct the protocolContext so we can route through the registration
-	// path that updates codecLookup. Calling Start() would do this, but
-	// avoiding it keeps the test isolated to sendMessage.
+	// path that updates the codec registry. Calling Start() would do this,
+	// but avoiding it keeps the test isolated to sendMessage.
 	proto.ensureContext()
 	RegisterCodec(proto.ctx, failingCodec{})
 

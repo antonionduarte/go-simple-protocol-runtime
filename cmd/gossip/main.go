@@ -5,9 +5,8 @@
 //
 // Run multiple instances on different ports, each pointing at a
 // couple of contacts, to form a small cluster. Each node will
-// broadcast a "hello from <addr>" message every five seconds via a
-// small third demo protocol that drives the broadcaster off the
-// runtime's periodic-timer system.
+// broadcast a "hello from <addr>" message every five seconds via
+// gossip's optional periodic-broadcast hook.
 package main
 
 import (
@@ -61,50 +60,18 @@ func main() {
 
 	logger.Info("gossip node starting", "self", (&self).ToString(), "contacts", len(contacts))
 
+	heartbeat := []byte("hello from " + (&self).ToString())
 	rt := protorun.New(self,
 		protorun.WithLogger(logger),
 		protorun.WithTCPTransport(context.Background()),
 	)
 	rt.Register(membership.New(contacts))
-	g := gossip.New(func(payload []byte) {
+	rt.Register(gossip.New(func(payload []byte) {
 		logger.Info("gossip delivered", "payload", string(payload))
-	})
-	rt.Register(g)
-	rt.Register(NewPeriodicBroadcaster(g, (&self).ToString(), 5*time.Second))
+	}).EnablePeriodic(5*time.Second, func() []byte { return heartbeat }))
 
 	if err := rt.Run(); err != nil {
 		logger.Error("runtime exited with error", "err", err)
 		os.Exit(1)
 	}
-}
-
-// PeriodicBroadcaster is a tiny demo protocol that periodically asks
-// the gossip protocol to broadcast a heartbeat payload. It uses the
-// runtime's periodic-timer system rather than a raw goroutine so the
-// runtime's Cancel stops it automatically, and so the work runs on a
-// protocol event loop just like every other handler.
-type PeriodicBroadcaster struct {
-	g        *gossip.Protocol
-	self     string
-	interval time.Duration
-}
-
-func NewPeriodicBroadcaster(g *gossip.Protocol, self string, interval time.Duration) *PeriodicBroadcaster {
-	return &PeriodicBroadcaster{g: g, self: self, interval: interval}
-}
-
-// broadcastTick is the Timer marker for the periodic heartbeat. The
-// runtime keys handlers by TimerID, so any unique int will do.
-type broadcastTick struct{}
-
-func (broadcastTick) TimerID() int { return 1 }
-
-func (p *PeriodicBroadcaster) Start(ctx protorun.ProtocolContext) {
-	ctx.RegisterTimerHandler(broadcastTick{}, func(_ protorun.Timer) {
-		p.g.Broadcast([]byte("hello from " + p.self))
-	})
-}
-
-func (p *PeriodicBroadcaster) Init(ctx protorun.ProtocolContext) {
-	ctx.SetupPeriodicTimer(broadcastTick{}, p.interval)
 }

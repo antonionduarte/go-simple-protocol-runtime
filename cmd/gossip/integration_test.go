@@ -50,18 +50,67 @@ func (r *recorder) count(payload string) int {
 	return r.counts[payload]
 }
 
+// viewWatcher is a test harness protocol that subscribes to
+// membership.ViewChanged and tracks the running peer count for
+// convergence assertions. The lock lives here — at the test boundary
+// — so the production membership and gossip protocols can stay
+// lock-free with all state owned by their event loops.
+type viewWatcher struct {
+	mu   sync.Mutex
+	size int
+}
+
+func (w *viewWatcher) Start(ctx protorun.ProtocolContext) {
+	protorun.SubscribeNotification(ctx, func(ev membership.ViewChanged) {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		switch {
+		case ev.HasAdded:
+			w.size++
+		case ev.HasRemoved:
+			w.size--
+		}
+	})
+}
+
+func (*viewWatcher) Init(_ protorun.ProtocolContext) {}
+
+func (w *viewWatcher) Size() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.size
+}
+
+// triggerer is a test harness protocol whose only job is to expose a
+// goroutine-safe Trigger method that the test goroutine can call.
+// Trigger uses protorun.SendRequest under the hood, which is the same
+// path peer protocols on the runtime would use to originate a
+// broadcast. This keeps "cross-protocol coordination is IPC" as the
+// single rule, including for the test driver.
+type triggerer struct {
+	ctx protorun.ProtocolContext
+}
+
+func (t *triggerer) Start(ctx protorun.ProtocolContext) { t.ctx = ctx }
+func (*triggerer) Init(_ protorun.ProtocolContext)      {}
+
+func (t *triggerer) Trigger(payload []byte) {
+	protorun.SendRequest(t.ctx, &gossip.TriggerBroadcast{Payload: payload},
+		func(_ *gossip.BroadcastAck, _ error) {})
+}
+
 // node bundles the per-instance handles a test wants to interact with.
 type node struct {
-	rt  *protorun.Runtime
-	g   *gossip.Protocol
-	m   *membership.Protocol
-	rec *recorder
+	rt        *protorun.Runtime
+	trigger   *triggerer
+	watcher   *viewWatcher
+	rec       *recorder
 }
 
 // startCluster builds nodeCount runtimes on a fresh port range, wires
-// each with membership(contacts(i+1, i+5)) + gossip, starts them in
-// parallel, waits for membership convergence, and registers Cancel
-// for cleanup.
+// each with membership(contacts(i+1, i+5)) + gossip + viewWatcher,
+// starts them in parallel, waits for membership convergence, and
+// registers Cancel for cleanup.
 func startCluster(t *testing.T) []*node {
 	t.Helper()
 	base := reservePorts(nodeCount)
@@ -82,22 +131,30 @@ func startCluster(t *testing.T) []*node {
 }
 
 func buildNode(t *testing.T, basePort, i int) *node {
+	return buildNodeOf(t, basePort, i, nodeCount)
+}
+
+func buildNodeOf(t *testing.T, basePort, i, total int) *node {
 	t.Helper()
 	self := transport.NewHost(basePort+i, "127.0.0.1")
 	contacts := []transport.Host{
-		transport.NewHost(basePort+(i+1)%nodeCount, "127.0.0.1"),
-		transport.NewHost(basePort+(i+5)%nodeCount, "127.0.0.1"),
+		transport.NewHost(basePort+(i+1)%total, "127.0.0.1"),
+		transport.NewHost(basePort+(i+5)%total, "127.0.0.1"),
 	}
 
 	rec := newRecorder()
+	watcher := &viewWatcher{}
+	trigger := &triggerer{}
 	m := membership.New(contacts)
 	g := gossip.New(rec.record)
 
 	rt := protorun.New(self, protorun.WithTCPTransport(context.Background()))
 	rt.Register(m)
 	rt.Register(g)
+	rt.Register(watcher)
+	rt.Register(trigger)
 
-	return &node{rt: rt, g: g, m: m, rec: rec}
+	return &node{rt: rt, trigger: trigger, watcher: watcher, rec: rec}
 }
 
 func waitForConvergence(t *testing.T, nodes []*node) {
@@ -115,7 +172,7 @@ func waitForConvergence(t *testing.T, nodes []*node) {
 
 func everyNodeHasView(nodes []*node, minSize int) bool {
 	for _, n := range nodes {
-		if len(n.m.View()) < minSize {
+		if n.watcher.Size() < minSize {
 			return false
 		}
 	}
@@ -125,7 +182,7 @@ func everyNodeHasView(nodes []*node, minSize int) bool {
 func viewReport(nodes []*node) string {
 	var b strings.Builder
 	for i, n := range nodes {
-		fmt.Fprintf(&b, "node%d=%d ", i, len(n.m.View()))
+		fmt.Fprintf(&b, "node%d=%d ", i, n.watcher.Size())
 	}
 	return strings.TrimSpace(b.String())
 }
@@ -169,7 +226,7 @@ func nodesMissing(nodes []*node, payload string, expected int) []int {
 func TestGossip_TenNodes_SingleBroadcast(t *testing.T) {
 	nodes := startCluster(t)
 
-	nodes[0].g.Broadcast([]byte("hello"))
+	nodes[0].trigger.Trigger([]byte("hello"))
 
 	if !waitForDelivery(nodes, []string{"hello"}) {
 		t.Fatalf("nodes %v never received \"hello\" exactly once",
@@ -193,13 +250,13 @@ func TestGossip_TenNodes_ConcurrentBroadcasts(t *testing.T) {
 		defer wg.Done()
 		ready.Done()
 		<-start
-		nodes[0].g.Broadcast([]byte("alpha"))
+		nodes[0].trigger.Trigger([]byte("alpha"))
 	}()
 	go func() {
 		defer wg.Done()
 		ready.Done()
 		<-start
-		nodes[5].g.Broadcast([]byte("beta"))
+		nodes[5].trigger.Trigger([]byte("beta"))
 	}()
 
 	ready.Wait()

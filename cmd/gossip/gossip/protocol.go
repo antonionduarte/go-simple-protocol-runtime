@@ -3,7 +3,7 @@ package gossip
 import (
 	"math/rand/v2"
 	"slices"
-	"sync"
+	"time"
 
 	"github.com/antonionduarte/go-simple-protocol-runtime/cmd/gossip/membership"
 	"github.com/antonionduarte/go-simple-protocol-runtime/pkg/protorun"
@@ -15,16 +15,24 @@ import (
 // view; on receipt, the node delivers locally if it hasn't seen the
 // ID before and forwards to every peer except the sender.
 //
-// State is event-loop-owned for inbound handlers and the ViewChanged
-// subscription, with a mutex to guard the seen-set and view cache so
-// the public Broadcast method can be called from any goroutine.
+// All state is owned by this protocol's event loop. To originate a
+// broadcast, peer code on the same runtime issues a TriggerBroadcast
+// IPC request via protorun.SendRequest; the handler runs on this
+// protocol's event loop and replies with BroadcastAck once the
+// payload has been queued for fanout.
+//
+// Optionally, EnablePeriodic configures the protocol to broadcast a
+// caller-supplied payload at a fixed interval — handy for heartbeats
+// or demo programs.
 type Protocol struct {
 	ctx       protorun.ProtocolContext
 	onDeliver func([]byte)
 
-	mu   sync.Mutex
 	seen map[uint64]struct{}
 	view []transport.Host
+
+	periodicInterval time.Duration
+	periodicPayload  func() []byte
 }
 
 // New returns a Protocol that calls onDeliver(payload) exactly once
@@ -37,46 +45,98 @@ func New(onDeliver func([]byte)) *Protocol {
 	}
 }
 
+// EnablePeriodic configures the protocol to call payload() and
+// broadcast the returned bytes once every interval, starting after
+// Init. Both a positive interval and a non-nil payload are required;
+// otherwise this call is a no-op. Returns p so callers can chain
+// onto New. Must be invoked before Register.
+//
+// payload runs on the protocol's event loop, so it can read protocol-
+// scoped state without locking — but it must not block.
+func (p *Protocol) EnablePeriodic(interval time.Duration, payload func() []byte) *Protocol {
+	if interval <= 0 || payload == nil {
+		return p
+	}
+	p.periodicInterval = interval
+	p.periodicPayload = payload
+	return p
+}
+
+// TriggerBroadcast is the IPC request peer code uses to originate a
+// gossip broadcast. Routing through SendRequest /
+// RegisterRequestHandler ensures the payload always lands on this
+// protocol's event loop, regardless of which goroutine the caller
+// runs on.
+type TriggerBroadcast struct {
+	protorun.BaseRequest
+	Payload []byte
+}
+
+// BroadcastAck is the empty reply to TriggerBroadcast; receiving it
+// means the payload has been seen-set'd and queued for fanout.
+type BroadcastAck struct {
+	protorun.BaseReply
+}
+
+// periodicTick is the Timer marker for the optional periodic
+// broadcast. The runtime keys handlers by TimerID, scoped to the
+// owning protocol, so any constant int will do.
+type periodicTick struct{}
+
+func (periodicTick) TimerID() int { return 1 }
+
 func (p *Protocol) Start(ctx protorun.ProtocolContext) {
 	p.ctx = ctx
 	protorun.RegisterCodec(ctx, Codec{})
 	protorun.RegisterHandler(ctx, p.handleInbound)
 	protorun.SubscribeNotification(ctx, p.handleViewChanged)
+	protorun.RegisterRequestHandler(ctx, p.handleBroadcast)
+	if p.periodicEnabled() {
+		ctx.RegisterTimerHandler(periodicTick{}, p.handlePeriodicTick)
+	}
 }
 
 func (p *Protocol) Init(ctx protorun.ProtocolContext) {
 	protorun.SendRequest(ctx, &membership.GetView{}, p.handleInitialView)
+	if p.periodicEnabled() {
+		ctx.SetupPeriodicTimer(periodicTick{}, p.periodicInterval)
+	}
 }
 
-// Broadcast sends payload to every node in the cluster (including the
-// originator). Goroutine-safe.
-func (p *Protocol) Broadcast(payload []byte) {
+func (p *Protocol) periodicEnabled() bool {
+	return p.periodicInterval > 0 && p.periodicPayload != nil
+}
+
+func (p *Protocol) handleBroadcast(req *TriggerBroadcast, r protorun.Responder[*BroadcastAck]) {
+	p.disseminate(req.Payload)
+	r.Reply(&BroadcastAck{})
+}
+
+func (p *Protocol) handlePeriodicTick(_ protorun.Timer) {
+	p.disseminate(p.periodicPayload())
+}
+
+// disseminate is the event-loop-only path that originates a fresh
+// broadcast: mints an ID, marks it seen, self-delivers, and fans out
+// to every known peer. Shared by handleBroadcast (the IPC entry) and
+// handlePeriodicTick (the optional timer entry).
+func (p *Protocol) disseminate(payload []byte) {
 	// Math/rand/v2 is fine here: a 64-bit value is collision-free in
 	// practice and we don't care about adversarial collisions —
 	// gossip IDs are not authenticated.
 	id := rand.Uint64() //nolint:gosec // see comment
-
-	p.mu.Lock()
 	p.seen[id] = struct{}{}
-	peers := slices.Clone(p.view)
-	p.mu.Unlock()
-
 	p.onDeliver(payload)
-	p.fanout(&Message{ID: id, Payload: payload}, peers)
+	p.fanout(&Message{ID: id, Payload: payload}, p.view)
 }
 
 func (p *Protocol) handleInbound(msg *Message, sender transport.Host) {
-	p.mu.Lock()
 	if _, dup := p.seen[msg.ID]; dup {
-		p.mu.Unlock()
 		return
 	}
 	p.seen[msg.ID] = struct{}{}
-	peers := excluding(p.view, sender)
-	p.mu.Unlock()
-
 	p.onDeliver(msg.Payload)
-	p.fanout(msg, peers)
+	p.fanout(msg, excluding(p.view, sender))
 }
 
 func (p *Protocol) handleInitialView(rep *membership.View, err error) {
@@ -84,14 +144,10 @@ func (p *Protocol) handleInitialView(rep *membership.View, err error) {
 		p.ctx.Logger().Error("initial GetView failed", "err", err)
 		return
 	}
-	p.mu.Lock()
 	p.view = rep.Peers
-	p.mu.Unlock()
 }
 
 func (p *Protocol) handleViewChanged(ev membership.ViewChanged) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	switch {
 	case ev.HasAdded:
 		if !slices.ContainsFunc(p.view, sameHost(ev.Added)) {

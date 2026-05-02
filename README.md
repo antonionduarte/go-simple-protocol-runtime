@@ -6,7 +6,8 @@ Simple protocol runtime in Go. (heavily inspired by [Babel](https://github.com/p
 
 - [X] Implement basic structure.
 - [X] Implement network layer, for TCP initially. TODO: Had an error, I probably need to do a handshake.
-- [ ] Implement inter-protocol communication, so that we can send messages between protocols within same Runtime.
+- [X] Implement inter-protocol communication, so that we can send messages between protocols within same Runtime. (Request/Reply via `RegisterRequestHandler` + `SendRequest`, fan-out Notifications via `SubscribeNotification` / `PublishNotification`. Local-only — cross-node still goes through the peer-message path.)
+- [X] Panic recovery for handler dispatch: every handler invocation runs under a `recover` so one bad protocol can't take down its event loop. Optional `PanicHandler` interface lets a protocol observe panics for metrics / supervision; request handlers also auto-fail their `Responder` with `ErrHandlerPanicked` so requesters get an immediate error instead of waiting for the timeout.
 - [X] Implement a simple protocol, which can send and receive messages to test this.
 - [X] Implement timer functionality.
 - [ ] Implement configuration file parser.
@@ -32,6 +33,7 @@ type ProtoProtocol struct {
 func SendMessage(msg Message, sendTo Host) {}
 ```
 - [X] Consider copying Hosts around as values instead of using references. 
+- [ ] Framework-level invariant assertions, opt-in via something like `WithStrict(true)`, paying nothing in production. Catches misuse the Go type system can't express. Concrete asserts to add: double-registration of a wireID (codec / handler / request handler / notification handler), phase tracking (e.g. `Connect` only valid post-`Start`, registrations only valid inside `Start`), slow-handler watchdog (log/panic when a single handler invocation exceeds N seconds), reply-without-handler (loud log when `Responder.Reply` lands with no waiter), subscribe-without-lifecycle guard (refuse if the calling protocol isn't fully registered). The point is to shorten the time between writing a bug and getting a clear stack trace.
 
 ## How to write a protocol
 

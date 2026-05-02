@@ -37,6 +37,20 @@ jobs:
       - name: go test
         run: go test ./... -race -coverprofile=coverage.out -covermode=atomic
 
+      # Catch regressions in test coverage. The threshold is intentionally
+      # below current to leave headroom for refactors; raise it as the
+      # suite grows. cmd/ packages drag the total down because the main
+      # binaries are not exercised under `go test`.
+      - name: coverage threshold
+        run: |
+          threshold=60
+          coverage=$(go tool cover -func=coverage.out | tail -1 | awk '{print int($3)}')
+          if [ "$coverage" -lt "$threshold" ]; then
+            echo "::error::coverage ${coverage}% is below threshold ${threshold}%"
+            exit 1
+          fi
+          echo "coverage ${coverage}% >= threshold ${threshold}%"
+
       - name: install golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:

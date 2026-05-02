@@ -1,280 +1,219 @@
-# Simple Protocol Runtime 
-Simple protocol runtime in Go. (heavily inspired by [Babel](https://github.com/pfouto/babel-core) (java framework to implement distributed protocols).)
+# protorun
 
-## Extremely WIP please don't mock my code.
-## TODO:
+A small framework for building distributed protocols in Go, inspired by
+[Babel](https://github.com/pfouto/babel-core) (the Java protocol-composition
+framework). Protocols are written as Go types implementing `Start(ctx)` and
+`Init(ctx)`; the runtime handles event-loop concurrency, session establishment
+over TCP, type-safe message dispatch, retries, panic recovery, and
+inter-protocol coordination via Request/Reply + Notifications.
 
-- [X] Implement basic structure.
-- [X] Implement network layer, for TCP initially. TODO: Had an error, I probably need to do a handshake.
-- [X] Implement inter-protocol communication, so that we can send messages between protocols within same Runtime. (Request/Reply via `RegisterRequestHandler` + `SendRequest`, fan-out Notifications via `SubscribeNotification` / `PublishNotification`. Local-only — cross-node still goes through the peer-message path.)
-- [X] Panic recovery for handler dispatch: every handler invocation runs under a `recover` so one bad protocol can't take down its event loop. Optional `PanicHandler` interface lets a protocol observe panics for metrics / supervision; request handlers also auto-fail their `Responder` with `ErrHandlerPanicked` so requesters get an immediate error instead of waiting for the timeout.
-- [X] Implement a simple protocol, which can send and receive messages to test this.
-- [X] Implement timer functionality.
-- [ ] Implement configuration file parser.
-- [X] Add contexts **everywhere** in order to gracefully finish the runtime and it's experiments.
-- [X] Decide how I actually want to manage the self Host.
-- [X] High Priority - Might break everything - Rethink if I save the Host in the Message Structs.
-- [X] Decide correctly which static functions should be in which file, possibly ask GPT-4 about it his answer will be correct. 
-- [X] Should the cancelation of the runtime be called at the runtime level or?
-- [X] Should the network layer be generic by itself and abstract stuff like cancelation?
-- [X] Some mechanism for the main thread to actually finish execution.
-- [X] Propper channel management, I believe i'm not actually properly closing channels yet.
+> **Status:** pre-v1. The public API is settling but breaking changes are
+> still on the table. See [`TODO.md`](TODO.md) for what's planned next.
 
-```go
-package main
+## Why
 
-type Message struct{}
-type Host struct{}
+Distributed protocols (membership, gossip, consensus, replication...) compose
+naturally as layers. A gossip protocol asks a membership protocol "who are
+my neighbors?" and uses the answer to broadcast. A consensus protocol asks
+a membership protocol "is this node still alive?" and routes around if not.
 
-type ProtoProtocol struct {
-	msgHandlers map[int]func(msg Message, from Host)
-}
+protorun gives you the substrate for that composition without the
+boilerplate: message routing by Go-type wire identifier, per-protocol event
+loops that serialize handler execution (so you can mutate state without
+locking), and IPC primitives (Request/Reply, fan-out Notifications) so
+protocols on the same runtime can coordinate without going through the
+network.
 
-func SendMessage(msg Message, sendTo Host) {}
-```
-- [X] Consider copying Hosts around as values instead of using references. 
-- [ ] Framework-level invariant assertions, opt-in via something like `WithStrict(true)`, paying nothing in production. Catches misuse the Go type system can't express. Concrete asserts to add: double-registration of a wireID (codec / handler / request handler / notification handler), phase tracking (e.g. `Connect` only valid post-`Start`, registrations only valid inside `Start`), slow-handler watchdog (log/panic when a single handler invocation exceeds N seconds), reply-without-handler (loud log when `Responder.Reply` lands with no waiter), subscribe-without-lifecycle guard (refuse if the calling protocol isn't fully registered). The point is to shorten the time between writing a bug and getting a clear stack trace.
-
-## How to write a protocol
-
-Protocols implement the `Protocol` interface in `pkg/runtime` and interact
-with the system exclusively through the `ProtocolContext` they are given.
-
-```go
-type Protocol interface {
-    Start(ctx ProtocolContext)
-    Init(ctx ProtocolContext)
-    ProtocolID() int
-    Self() net.Host
-}
-```
-
-In `Start(ctx)` you register handlers and serializers:
-
-```go
-func (p *MyProtocol) Start(ctx runtime.ProtocolContext) {
-    p.ctx = ctx             // store context if needed later (e.g. in callbacks)
-    p.logger = ctx.Logger() // protocol-scoped logger
-
-    ctx.RegisterMessageHandler(MyMessageID, p.HandleMyMessage)
-    ctx.RegisterMessageSerializer(MyMessageID, &MySerializer{})
-}
-```
-
-In `Init(ctx)` you perform bootstrap actions (e.g. connect to peers, set timers):
-
-```go
-func (p *MyProtocol) Init(ctx runtime.ProtocolContext) {
-    ctx.Connect(p.peer) // initiate a session to a peer
-}
-
-Once your protocol is running, use the stored `ctx` inside your callbacks
-to send messages or schedule timers instead of calling `runtime.*`
-functions directly:
-
-```go
-func (p *MyProtocol) HandleMyMessage(msg runtime.Message) {
-    // ...
-    _ = p.ctx.Send(NewMyReply(p.self), p.peer)
-}
-```
-
-If your protocol wants to react to session events, it can optionally implement:
-
-```go
-type SessionConnectedHandler interface {
-    OnSessionConnected(net.Host)
-}
-
-type SessionDisconnectedHandler interface {
-    OnSessionDisconnected(net.Host)
-}
-```
-
-The runtime will call these methods from the protocol's own event loop whenever sessions are established or torn down.
-
-All protocol callbacks (message handlers, timer handlers, and the optional
-session event handlers) are serialized through a single event loop per
-protocol (`ProtoProtocol.eventHandler`). This means you can usually mutate
-protocol state directly inside your handlers without additional locking,
-as long as all access happens from within those callbacks.
-
-## Net layer:
-
-- [X] Host struct with serializer and deserializer.
-- [X] Add the Sender Host to all the messages.
-
-Types of Network / Channel Events:
-
-```go
-// Transport-level events (TCP)
-type TransportEvent interface {
-    Host() Host
-}
-
-type TransportConnected struct {
-    host Host
-}
-
-type TransportDisconnected struct {
-    host Host
-}
-
-type TransportFailed struct {
-    host Host
-}
-
-// Session-level events (after handshake)
-type SessionEvent interface {
-    Host() Host
-}
-
-type SessionConnected struct {
-    host Host
-}
-
-type SessionDisconnected struct {
-    host Host
-}
-
-type SessionFailed struct {
-    host Host
-}
-```
-
-I think I want message handler format to be:
+## Quick start
 
 ```go
 package main
 
-// Receiving messages:
+import (
+    "context"
+    "log/slog"
 
-func handleRandomMessage(msg Message, from Host)
+    "github.com/antonionduarte/go-simple-protocol-runtime/pkg/protorun"
+    "github.com/antonionduarte/go-simple-protocol-runtime/pkg/transport"
+)
 
-// And sending messages:
-// ... messages will propagate downwards, Runtime -> NetworkLayer -> TransportLayer
-func SendMessage(msg Message, to Host) // Runtime
-func Send(msg NetworkMessage, to Host) // NetworkLayer
-func Send(msg TransportMessage, to Host) // TransportLayer
-```
+type PingMessage struct {
+    protorun.BaseMessage
+    Seq uint64
+}
 
-## Logging
+type Pinger struct {
+    peer transport.Host
+    ctx  protorun.ProtocolContext
+}
 
-The runtime and its components use Go's `log/slog` package for structured
-logging. There are four main logging layers:
+func (p *Pinger) Start(ctx protorun.ProtocolContext) {
+    p.ctx = ctx
+    protorun.RegisterCodec(ctx, protorun.BinaryCodec[*PingMessage]{})
+    protorun.RegisterHandler(ctx, p.handle)
+}
 
-- **runtime**: high-level lifecycle events (starting, stopping, protocol init).
-- **session**: handshake and session events (connect / disconnect / fail).
-- **transport**: TCP-level events (listen, connect, read/write errors).
-- **protocol**: user protocol logs (e.g. \"Ping received\", \"Pong received\").
+func (p *Pinger) Init(ctx protorun.ProtocolContext) {
+    _ = ctx.ConnectWithRetry(p.peer)
+}
 
-The `Runtime` holds a base `*slog.Logger`, which you can configure from your
-application:
+func (p *Pinger) OnSessionConnected(_ transport.Host) {
+    _ = p.ctx.Send(&PingMessage{Seq: 1}, p.peer)
+}
 
-```go
-logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-    Level: slog.LevelDebug,
-}))
-runtime.GetRuntimeInstance().SetLogger(logger)
-```
+func (p *Pinger) handle(msg *PingMessage, from transport.Host) {
+    p.ctx.Logger().Info("got ping", "from", from.ToString(), "seq", msg.Seq)
+    _ = p.ctx.Send(&PingMessage{Seq: msg.Seq + 1}, p.peer)
+}
 
-Session and transport layers receive component-specific loggers (e.g.
-`logger.With(\"component\", \"session\")`, `logger.With(\"component\", \"transport\")`),
-and `ProtocolContext.Logger()` returns a logger scoped to the protocol:
+func main() {
+    self := transport.NewHost(5001, "127.0.0.1")
+    peer := transport.NewHost(5002, "127.0.0.1")
 
-```go
-func (p *MyProtocol) Start(ctx runtime.ProtocolContext) {
-    log := ctx.Logger()
-    log.Info(\"protocol starting\", \"self\", ctx.Self().ToString())
-    // register handlers...
+    rt := protorun.New(self,
+        protorun.WithLogger(slog.Default()),
+        protorun.WithTCPTransport(context.Background()),
+    )
+    rt.Register(&Pinger{peer: peer})
+    _ = rt.Run()
 }
 ```
 
-## Configuration (YAML)
+Run two instances with their `-self-port` and `-peer-port` flipped and they
+start exchanging messages.
 
-Example applications can be configured via a simple YAML file using the
-`pkg/runtime/config` package. For the `pingpong` example, YAML is used for
-logging and buffer settings, while self/peer hosts are provided via flags.
-A minimal schema looks like:
+A complete two-binary version of this example lives at
+[`cmd/pingpong/`](cmd/pingpong/). For a multi-layer example exercising IPC,
+session events, and a 10-node integration test, see
+[`cmd/gossip/`](cmd/gossip/) — a membership protocol stacked under an
+eager-push gossip protocol.
 
-```yaml
-logging:
-  level: debug          # debug, info, warn, error
-  components: ["protocol"] # runtime, session, transport, protocol
-  format: text          # text or json
+## Architecture
 
-runtime:
+```
+┌──────────────────────────────────────────────────────┐
+│             Your protocols (Protocol)                │
+│  • Start(ctx) registers handlers                     │
+│  • Init(ctx) bootstraps connections, timers          │
+│  • Each gets its own goroutine event loop            │
+└─────────────────┬─────────────┬──────────────────────┘
+                  │             │
+                  │ messages    │ IPC
+                  │             │
+┌─────────────────▼─────────────▼──────────────────────┐
+│ Runtime                                              │
+│  • Codec registry (wireID → owning protocol)         │
+│  • IPC router (request handlers, notif fanout)       │
+│  • Timer table, retry table                          │
+│  • Per-component slog logger                         │
+└─────────────────┬────────────────────────────────────┘
+                  │
+┌─────────────────▼────────────────────────────────────┐
+│ SessionLayer                                         │
+│  • Hello/Ack handshake binds connections to Hosts    │
+│  • Emits SessionConnected / Disconnected / Failed    │
+└─────────────────┬────────────────────────────────────┘
+                  │
+┌─────────────────▼────────────────────────────────────┐
+│ TransportLayer (TCP today; pluggable interface)      │
+│  • length-prefixed framing                           │
+└──────────────────────────────────────────────────────┘
 ```
 
-In `cmd/pingpong/main.go` you can pass `-config cmd/pingpong/pingpong.example.yaml`
-to load these settings. The config is used to build the base logger via
-`runtime.NewLoggerFromConfig(cfg.Logging)` and to configure buffer sizes.
-Self/peer hosts are chosen via command-line flags on the `pingpong` binary:
+## Concepts
+
+### Protocols
+
+A `Protocol` is any Go type with `Start(ProtocolContext)` and
+`Init(ProtocolContext)`. The runtime calls every protocol's `Start` first
+(registration phase), then every protocol's `Init` (activation phase) — so
+when one protocol's `Init` fires off a request, the target's handler is
+already registered.
+
+Optional interfaces a protocol can also implement:
+
+- `SessionConnectedHandler` / `SessionDisconnectedHandler` / `SessionGivenUpHandler`
+  to react to peer lifecycle events.
+- `PanicHandler` to observe when one of your handlers panicked.
+
+### Messages
+
+Embed `protorun.BaseMessage` and you have a wire-ready type. The wire ID is
+derived from the Go type name (FNV-1a hash). For long-lived deployments that
+might rename types, implement `WireName() string` on the type to freeze the
+ID.
+
+`BinaryCodec[*M]` works for fixed-size messages (`encoding/binary` rules
+apply). For variable-length payloads, write a custom `Codec[*M]` on top of
+the helpers in `pkg/wire` (`WriteUint64`, `ReadBytes`, etc.).
+
+### Inter-protocol coordination (IPC)
+
+Two patterns, both same-runtime only (cross-node still goes through the
+peer-message path):
+
+```go
+// Request/Reply: one handler per type, runtime-wide
+protorun.RegisterRequestHandler(ctx, func(req *GetView, r protorun.Responder[*View]) {
+    r.Reply(&View{Peers: snapshotOfPeers()})
+})
+
+protorun.SendRequest(ctx, &GetView{}, func(rep *View, err error) {
+    // runs on the requester's event loop
+})
+```
+
+```go
+// Notifications: pub/sub fanout, many subscribers per type
+protorun.SubscribeNotification(ctx, func(ev ViewChanged) { ... })
+protorun.PublishNotification(ctx, ViewChanged{Added: peer})
+```
+
+### Concurrency model
+
+Each protocol gets one goroutine that pulls events off its mailbox and
+dispatches them sequentially. Handlers can mutate protocol state without
+locking, as long as access stays inside the handlers.
+
+Public methods you expose on your protocol (e.g. an `enqueue(...)` method
+called from another protocol's goroutine or the application's main loop)
+are *not* on the event loop — for those, route work back onto the event
+loop via IPC (a self-targeted `SendRequest` is the idiomatic pattern). The
+gossip example does this: `gossip.TriggerBroadcast` is the public way to
+ask the gossip protocol to broadcast.
+
+## Documentation
+
+- Full API reference: `go doc github.com/antonionduarte/go-simple-protocol-runtime/pkg/protorun`
+- Pingpong example: [`cmd/pingpong/`](cmd/pingpong/)
+- Gossip example (membership + eager-push gossip + 10-node integration
+  test): [`cmd/gossip/`](cmd/gossip/)
+- Wire format details: see the package doc on `pkg/transport` and
+  `pkg/wire`.
+
+## Build, test, lint
 
 ```bash
-go run ./cmd/pingpong \
-  -config cmd/pingpong/pingpong.example.yaml \
-  -self-ip 127.0.0.1 -self-port 5001 \
-  -peer-ip 127.0.0.1 -peer-port 5002
+make build          # go build ./...
+make test           # go test ./...
+make test-race      # go test -race ./...
+make lint           # golangci-lint run ./...
+make coverage       # go test ... -coverprofile + summary
 ```
 
-## Errors we could detect and log:
-
-- [ ] Net layer related errors.
-- [ ] Protocol not registered.
-- [ ] Message serializer not registered.
-- [ ] Trying to start runtime without network protocol.
-
-## Timers
-
-The runtime exposes simple timer helpers that deliver `Timer` objects back
-into the protocol event loops:
-
-- `SetupTimer(timer, duration)` – fires once after `duration`.
-- `SetupPeriodicTimer(timer, duration)` – fires repeatedly every `duration`.
-- `CancelTimer(timerID)` – stops a previously scheduled timer.
-
-Timers are identified by `TimerID()`; this ID is used as a key inside the
-runtime's `ongoingTimers` map and **must be unique for the lifetime of each
-logical timer**. Reusing the same `TimerID` for overlapping timers will cause
-newer timers to overwrite older ones.
-
-## Serialized Format of Messages
-
-On the wire, data flows in layers:
-
-- **TCP frame** (handled by `TCPLayer`):
-
-  ```text
-  [Length(uint32 BE) || LayerID(1 byte) || Body...]
-  ```
-
-- **Session layer body** (handled by `SessionLayer`):
-
-  - Application traffic (`LayerID = 0`):
-
-    ```text
-    [ProtocolID(uint16 LE) || MessageID(uint16 LE) || Payload...]
-    ```
-
-  - Session/handshake traffic (`LayerID = 1`):
-
-    ```text
-    [HandshakeType(1 byte) || HandshakeData...]
-    ```
-
-    where `HandshakeType` is `Hello` (followed by serialized `Host`) or `Ack`
-    (no extra data).
-
-`ProtocolID` is used to route messages to the correct `ProtoProtocol`,
-and `MessageID` is used to select the message handler within that protocol.
-
-## Testing
-
-For concurrency-sensitive behavior (e.g. runtime lifecycle, session handling),
-you can run selected tests under the race detector:
+Pre-commit hooks (run lint + tests on staged Go files):
 
 ```bash
-go test -race ./pkg/runtime -run TestRuntime_LifecycleShutdown
-go test -race ./pkg/runtime/net -run 'TestSessionLayer|TestTCPLayer'
+make hooks-install
 ```
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). The short version: protocols
+should only interact with the runtime via `ProtocolContext`; cross-protocol
+coordination is IPC, never direct method calls; new tests use goleak +
+`-race`; lint must pass with zero issues.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).

@@ -72,6 +72,11 @@ type Runtime struct {
 
 	logger  *slog.Logger
 	metrics Metrics
+
+	// Strict-mode toggles. See strict.go for the full list of checks
+	// they enable. strict=false (the default) makes them all no-ops.
+	strict               bool
+	strictHandlerTimeout time.Duration
 }
 
 // SessionConnectedHandler can be implemented by a protocol that wants to be
@@ -376,10 +381,14 @@ func (r *Runtime) publishNotification(wireID uint64, n Notification) {
 
 func (r *Runtime) Cancel() {
 	// Cancel tears down the runtime in the following order:
-	//   1. Cancel the runtime context (used by all internal goroutines).
-	//   2. Stop session and transport layers.
-	//   3. Stop and clear all timers.
-	//   4. Wait for all goroutines to finish via the WaitGroup.
+	//   1. Mark every protocol cancelled (strict-mode phase tracking).
+	//   2. Cancel the runtime context (used by all internal goroutines).
+	//   3. Stop session and transport layers.
+	//   4. Stop and clear all timers.
+	//   5. Wait for all goroutines to finish via the WaitGroup.
+	for _, p := range r.protocols {
+		p.setPhase(phaseCancelled)
+	}
 	r.cancelFunc()
 	if r.sessionLayer != nil {
 		r.sessionLayer.Cancel()

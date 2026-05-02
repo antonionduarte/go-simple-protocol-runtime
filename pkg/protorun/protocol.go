@@ -34,28 +34,60 @@ type PanicHandler interface {
 // Message, Codec, Timer) rather than on the concrete Runtime type.
 
 type (
-	// ProtocolContext is the main entry point for protocol implementations.
-	// It is provided to Protocol.Start and Protocol.Init and is used to
-	// connect/disconnect from peers, send messages, schedule timers,
-	// access the protocol-scoped logger, and query the local Host identity.
-	//
-	// Codec and message-handler registration is done via the typed
-	// generic helpers RegisterCodec[M] and RegisterHandler[M], which
-	// reach the framework through the unexported methods on this
-	// interface.
-	ProtocolContext interface {
+	// Connector is the capability for opening, retrying, and tearing
+	// down sessions with peers. Handlers that only need to react to
+	// session events can take Connector instead of the full
+	// ProtocolContext, making their dependency on the framework
+	// explicit at the type level.
+	Connector interface {
 		Connect(host transport.Host) error
 		ConnectWithRetry(host transport.Host) error
 		Disconnect(host transport.Host) error
-		Send(msg Message, to transport.Host) error
+	}
 
+	// Sender is the capability for sending application messages to a
+	// peer. Send returns an error synchronously (e.g. ErrNoCodec); the
+	// actual delivery is asynchronous and surfaces via SessionFailed
+	// events on the receive side.
+	Sender interface {
+		Send(msg Message, to transport.Host) error
+	}
+
+	// Timing is the capability for scheduling one-shot and periodic
+	// timers and registering their handlers. Handlers fire on the
+	// owning protocol's event loop; TimerID() must be unique per
+	// logical timer.
+	Timing interface {
 		SetupTimer(timer Timer, duration time.Duration)
 		SetupPeriodicTimer(timer Timer, duration time.Duration)
 		CancelTimer(timerID int)
 		RegisterTimerHandler(timer Timer, handler func(Timer))
+	}
 
-		Logger() *slog.Logger
+	// Identity is the capability for reading the protocol's view of
+	// itself: the local Host and a protocol-scoped logger.
+	Identity interface {
 		Self() transport.Host
+		Logger() *slog.Logger
+	}
+
+	// ProtocolContext is the main entry point for protocol implementations.
+	// It is provided to Protocol.Start and Protocol.Init. It composes the
+	// fine-grained capability interfaces (Connector, Sender, Timing,
+	// Identity) so handlers and helpers can declare narrower deps if
+	// they want — a function that only needs to send messages can take
+	// Sender, a function that only needs the local Host can take
+	// Identity, and so on.
+	//
+	// Codec and message-handler registration is done via the typed
+	// generic helpers RegisterCodec[M] / RegisterHandler[M] / the IPC
+	// helpers in ipc.go, which reach the framework through the
+	// unexported methods on this interface.
+	ProtocolContext interface {
+		Connector
+		Sender
+		Timing
+		Identity
 
 		// Internal hooks used by RegisterCodec[M] and RegisterHandler[M].
 		// Defined as unexported methods so only the runtime package can
@@ -117,6 +149,12 @@ type (
 		pendingMu     sync.Mutex
 		nextRequestID atomic.Uint64
 
+		// phase tracks the per-protocol lifecycle phase for strict-mode
+		// invariant checks. See strict.go. Read on dispatch hot paths
+		// when strict is on; never read when strict is off (so the
+		// atomic load never even happens for production runs).
+		phase atomic.Int32
+
 		ctx ProtocolContext
 	}
 
@@ -170,15 +208,23 @@ const defaultProtoChannelBuffer = 16
 func (p *protoProtocol) bindRuntime(r *Runtime) { p.runtime = r }
 
 func (p *protoProtocol) Start(ctx context.Context, wg *sync.WaitGroup) {
-	wg.Add(1)
 	p.ensureContext()
+	p.setPhase(phaseRegistering)
+	// wg.Add happens AFTER protocol.Start returns. If user's Start
+	// panics (e.g. a strict-mode invariant fires), no eventHandler
+	// goroutine is created, so the WG counter must not have been
+	// incremented — otherwise Cancel's wg.Wait() would block forever.
 	p.protocol.Start(p.ctx)
+	p.setPhase(phaseRegistered)
+	wg.Add(1)
 	go p.eventHandler(ctx, wg)
 }
 
 func (p *protoProtocol) Init() {
 	p.ensureContext()
+	p.setPhase(phaseInitializing)
 	p.protocol.Init(p.ctx)
+	p.setPhase(phaseRunning)
 }
 
 func (p *protoProtocol) RegisterTimerHandler(timer Timer, handler func(Timer)) {
@@ -211,16 +257,20 @@ func (p *protoProtocol) ensureContext() {
 // --- ProtocolContext implementation ---
 
 func (c *protocolContext) Connect(host transport.Host) error {
+	c.proto.requireActivePhase("Connect")
 	return c.runtime.connect(host)
 }
 func (c *protocolContext) ConnectWithRetry(host transport.Host) error {
+	c.proto.requireActivePhase("ConnectWithRetry")
 	return c.runtime.connectWithRetry(host)
 }
 func (c *protocolContext) Disconnect(host transport.Host) error {
+	c.proto.requireActivePhase("Disconnect")
 	return c.runtime.disconnect(host)
 }
 
 func (c *protocolContext) Send(msg Message, to transport.Host) error {
+	c.proto.requireActivePhase("Send")
 	return c.runtime.sendMessage(msg, to)
 }
 
@@ -240,6 +290,15 @@ func (c *protocolContext) Self() transport.Host { return c.runtime.self }
 func (c *protocolContext) Logger() *slog.Logger { return c.logger }
 
 func (c *protocolContext) registerCodec(wireID uint64, codec codec) {
+	c.proto.requireRegisterPhase("RegisterCodec")
+	if c.runtime.strict {
+		c.runtime.codecLookupMu.RLock()
+		_, exists := c.runtime.codecLookup[wireID]
+		c.runtime.codecLookupMu.RUnlock()
+		if exists {
+			strictPanic("RegisterCodec for wireID=%#x called twice", wireID)
+		}
+	}
 	c.proto.codecs[wireID] = codec
 	// Make this protocol the routing target for the wire id on the
 	// runtime-level lookup table. RegisterCodec should be called once
@@ -251,6 +310,12 @@ func (c *protocolContext) registerCodec(wireID uint64, codec codec) {
 }
 
 func (c *protocolContext) registerHandler(wireID uint64, fn func(Message, transport.Host)) {
+	c.proto.requireRegisterPhase("RegisterHandler")
+	if c.runtime.strict {
+		if _, exists := c.proto.handlers[wireID]; exists {
+			strictPanic("RegisterHandler for wireID=%#x called twice on the same protocol", wireID)
+		}
+	}
 	c.proto.handlers[wireID] = fn
 }
 
@@ -267,8 +332,13 @@ func (c *protocolContext) runtimePtr() *Runtime { return c.runtime }
 // hot-reload scenarios but it is almost always a programming error in
 // production code.
 func (c *protocolContext) registerRequestHandler(wireID uint64, fn func(Request, replyToken)) {
+	c.proto.requireRegisterPhase("RegisterRequestHandler")
 	c.runtime.requestRoutesMu.Lock()
 	if existing, ok := c.runtime.requestRoutes[wireID]; ok && existing.proto != c.proto {
+		if c.runtime.strict {
+			c.runtime.requestRoutesMu.Unlock()
+			strictPanic("RegisterRequestHandler for wireID=%#x already owned by another protocol", wireID)
+		}
 		c.logger.Warn("protorun: replacing existing request handler",
 			"wireID", wireID,
 		)
@@ -281,6 +351,7 @@ func (c *protocolContext) registerRequestHandler(wireID uint64, fn func(Request,
 // runtime so cross-protocol delivery and timeout management have a
 // single owner.
 func (c *protocolContext) sendRequest(wireID uint64, req Request, timeout time.Duration, onReply func(Reply, error)) {
+	c.proto.requireActivePhase("SendRequest")
 	c.runtime.sendRequest(c.proto, wireID, req, timeout, onReply)
 }
 
@@ -289,6 +360,7 @@ func (c *protocolContext) sendRequest(wireID uint64, req Request, timeout time.D
 // closure is invoked from this protocol's event loop when a
 // notification arrives.
 func (c *protocolContext) subscribeNotification(wireID uint64, fn func(Notification)) {
+	c.proto.requireRegisterPhase("SubscribeNotification")
 	c.runtime.subscribeNotification(c.proto, wireID, fn)
 }
 
@@ -297,6 +369,7 @@ func (c *protocolContext) unsubscribeNotification(wireID uint64) {
 }
 
 func (c *protocolContext) publishNotification(wireID uint64, n Notification) {
+	c.proto.requireActivePhase("PublishNotification")
 	c.runtime.publishNotification(wireID, n)
 }
 
@@ -360,7 +433,13 @@ func (p *protoProtocol) handleTimer(timer Timer) {
 // optional PanicHandler, and the event loop continues. Without this
 // guard a single bad handler would take down the protocol's event
 // loop and break every other handler that protocol owns.
+//
+// In strict mode, also arms a watchdog that fires a counter + warn
+// log if the handler exceeds the configured threshold (default 5s).
+// Stop is called on completion regardless of panic / normal return.
 func (p *protoProtocol) safeCall(where string, fn func()) {
+	stopWatchdog := p.strictWatchdog(where)
+	defer stopWatchdog()
 	defer func() {
 		if rec := recover(); rec != nil {
 			p.reportPanic(where, rec, debug.Stack())
@@ -415,10 +494,11 @@ func (p *protoProtocol) deliverReply(rep inboundReply) {
 	if !ok {
 		// Late arrival — the other branch (timeout vs reply) already
 		// claimed this requestID. Counter so operators can see how
-		// often this happens.
+		// often this happens; in strict mode also a warn-level log.
 		if p.runtime != nil {
 			p.runtime.metrics.Counter("protorun.ipc.reply.dropped_late", 1)
 		}
+		p.strictReplyWithoutHandler()
 		return
 	}
 	if p.runtime != nil {

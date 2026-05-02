@@ -119,9 +119,12 @@ func BenchmarkPublishNotification_Fanout(b *testing.B) {
 
 func benchPublish(b *testing.B, subscribers int) {
 	self := transport.NewHost(0, "127.0.0.1")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mock := NewMockNetworkLayer()
+	session := transport.NewSessionLayer(mock, self, ctx, 0, 0)
 	rt := New(self,
-		WithTransport(NewMockNetworkLayer(),
-			transport.NewSessionLayer(NewMockNetworkLayer(), self, context.Background(), 0, 0)),
+		WithTransport(mock, session),
 		WithChannelBuffer(b.N+1),
 	)
 
@@ -167,9 +170,12 @@ func fmtCount(n int) string {
 // runs. Throughput is the round-trip rate.
 func BenchmarkSendRequest(b *testing.B) {
 	self := transport.NewHost(0, "127.0.0.1")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mock := NewMockNetworkLayer()
+	session := transport.NewSessionLayer(mock, self, ctx, 0, 0)
 	rt := New(self,
-		WithTransport(NewMockNetworkLayer(),
-			transport.NewSessionLayer(NewMockNetworkLayer(), self, context.Background(), 0, 0)),
+		WithTransport(mock, session),
 		WithChannelBuffer(b.N+1),
 	)
 

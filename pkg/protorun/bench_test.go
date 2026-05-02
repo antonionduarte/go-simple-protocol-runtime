@@ -2,7 +2,6 @@ package protorun
 
 import (
 	"bytes"
-	"context"
 	"encoding/binary"
 	"sync"
 	"testing"
@@ -22,8 +21,8 @@ type benchMsg struct {
 func BenchmarkBinaryCodec_Marshal(b *testing.B) {
 	codec := BinaryCodec[*benchMsg]{}
 	msg := &benchMsg{Seq: 42}
-	b.ResetTimer()
-	for range b.N {
+
+	for b.Loop() {
 		if _, err := codec.Marshal(msg); err != nil {
 			b.Fatal(err)
 		}
@@ -38,8 +37,8 @@ func BenchmarkBinaryCodec_Unmarshal(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	b.ResetTimer()
-	for range b.N {
+
+	for b.Loop() {
 		if _, err := codec.Unmarshal(payload); err != nil {
 			b.Fatal(err)
 		}
@@ -49,8 +48,8 @@ func BenchmarkBinaryCodec_Unmarshal(b *testing.B) {
 // BenchmarkWireID measures the cost of computing a wire identifier —
 // per-call overhead for the lookup-by-type path.
 func BenchmarkWireID(b *testing.B) {
-	b.ResetTimer()
-	for range b.N {
+
+	for b.Loop() {
 		_ = WireID[*benchMsg]()
 	}
 }
@@ -84,9 +83,7 @@ func BenchmarkProcessMessage(b *testing.B) {
 
 	stop := make(chan struct{})
 	var drained sync.WaitGroup
-	drained.Add(1)
-	go func() {
-		defer drained.Done()
+	drained.Go(func() {
 		for {
 			select {
 			case <-proto.messageChannel:
@@ -94,10 +91,9 @@ func BenchmarkProcessMessage(b *testing.B) {
 				return
 			}
 		}
-	}()
+	})
 
-	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		buf := bytes.NewBuffer(frameBytes)
 		rt.processMessage(*buf, sender)
 	}
@@ -119,10 +115,8 @@ func BenchmarkPublishNotification_Fanout(b *testing.B) {
 
 func benchPublish(b *testing.B, subscribers int) {
 	self := transport.NewHost(0, "127.0.0.1")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	mock := NewMockNetworkLayer()
-	session := transport.NewSessionLayer(mock, self, ctx, 0, 0)
+	session := transport.NewSessionLayer(mock, self, b.Context(), 0, 0)
 	rt := New(self,
 		WithTransport(mock, session),
 		WithChannelBuffer(b.N+1),
@@ -170,10 +164,8 @@ func fmtCount(n int) string {
 // runs. Throughput is the round-trip rate.
 func BenchmarkSendRequest(b *testing.B) {
 	self := transport.NewHost(0, "127.0.0.1")
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	mock := NewMockNetworkLayer()
-	session := transport.NewSessionLayer(mock, self, ctx, 0, 0)
+	session := transport.NewSessionLayer(mock, self, b.Context(), 0, 0)
 	rt := New(self,
 		WithTransport(mock, session),
 		WithChannelBuffer(b.N+1),

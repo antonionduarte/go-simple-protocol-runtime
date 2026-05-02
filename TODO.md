@@ -84,4 +84,4 @@ completed during the polish passes leading up to v0.1.0.
       mesh / QUIC) needs the abstraction.
 - [ ] Decompose `Runtime` into focused subsystems
       (`ipcRouter`, `retryTable`, `timerTable`, `codecRegistry`).
-- [ ] Tag `v0.1.0`.
+- [x] Tag `v0.1.0`.

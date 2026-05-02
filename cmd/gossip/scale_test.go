@@ -34,11 +34,7 @@ func runScaleBroadcast(t *testing.T, total, viewMin int, convergeT, deliverT tim
 		// at large N would take minutes of wallclock.
 		var wg sync.WaitGroup
 		for _, n := range nodes {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				n.rt.Cancel()
-			}()
+			wg.Go(n.rt.Cancel)
 		}
 		wg.Wait()
 	})
